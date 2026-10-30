@@ -1,0 +1,10 @@
+# Environnement / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+.env
+node_modules/
+# Outillage skilldev
+.skilldev/

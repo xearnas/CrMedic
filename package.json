@@ -1,0 +1,11 @@
+{
+  "name": "crmedic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Suivi du CA et des frais d'un cabinet de médecine générale (PC et téléphone)",
+  "scripts": {
+    "start": "python3 -m http.server 8080 -d src",
+    "test": "./unittests/run.sh"
+  }
+}
