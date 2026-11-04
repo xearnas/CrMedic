@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Politique de confidentialité — CrMedic</title>
+<style>
+  body { margin: 0; background: #F5F4EF; color: #1A2A2C; font: 16px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 28px 0 6px; }
+  p, li { margin: 6px 0; }
+  .muted { color: #56635F; font-size: 14px; }
+  a { color: #0B6E8A; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Politique de confidentialité</h1>
+  <p class="muted">CrMedic — suivi du chiffre d'affaires et des frais d'un cabinet. Dernière mise à jour : 4 novembre 2026.</p>
+
+  <h2>En résumé</h2>
+  <p>CrMedic n'a pas de serveur et ne conserve aucune de vos données. Tout ce que vous saisissez reste sur votre appareil et dans votre propre Google Drive. Le développeur de l'application n'y a pas accès.</p>
+
+  <h2>Les données que vous saisissez</h2>
+  <p>Chiffre d'affaires journalier, nombre de consultations, frais (montant, date, catégorie, note, nom du justificatif), nom du cabinet et réglages du profil.</p>
+  <ul>
+    <li><b>Sur votre appareil</b> : ces données sont enregistrées dans le navigateur (stockage local). Les photos de justificatifs et la photo de profil y restent exclusivement.</li>
+    <li><b>Dans votre Google Drive</b> : si vous vous connectez avec Google, un classeur Google Sheets nommé « CrMedic - Données » est créé dans votre Drive et contient vos montants, catégories et réglages. Vous en restez propriétaire et pouvez le consulter, le partager (par exemple avec votre comptable), le modifier ou le supprimer à tout moment.</li>
+  </ul>
+
+  <h2>Connexion avec Google</h2>
+  <p>L'application demande les autorisations suivantes :</p>
+  <ul>
+    <li><b>Adresse e-mail et profil de base</b> : uniquement pour afficher le compte connecté.</li>
+    <li><b>Accès aux fichiers Drive créés par l'application</b> (autorisation « drive.file ») : pour créer, lire et mettre à jour le classeur « CrMedic - Données ». L'application ne peut voir aucun autre fichier de votre Drive.</li>
+  </ul>
+  <p>Ces informations sont échangées directement entre votre navigateur et Google. Elles ne transitent par aucun serveur du développeur et ne sont ni stockées, ni vendues, ni partagées, ni utilisées pour de la publicité.</p>
+  <p>L'utilisation par CrMedic des informations reçues des API Google respecte la <a href="https://developers.google.com/terms/api-services-user-data-policy">politique relative aux données utilisateur des services API Google</a>, y compris les exigences d'utilisation limitée.</p>
+
+  <h2>Export Excel</h2>
+  <p>Le fichier Excel est généré dans votre navigateur et téléchargé sur votre appareil. Pour cela, la bibliothèque ExcelJS est chargée depuis le réseau de diffusion jsDelivr.</p>
+
+  <h2>Supprimer vos données</h2>
+  <ul>
+    <li>Dans l'application : Profil → « Tout effacer » (efface aussi le classeur Drive si le compte Google est connecté), ou « Se déconnecter » pour interrompre la synchronisation.</li>
+    <li>Dans Google : supprimez le classeur « CrMedic - Données » de votre Drive et retirez l'accès de l'application sur <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+    <li>Dans le navigateur : effacez les données du site pour supprimer la copie locale.</li>
+  </ul>
+
+  <h2>Contact</h2>
+  <p>Pour toute question, ouvrez une demande sur le dépôt du projet : <a href="https://github.com/xearnas/CrMedic/issues">github.com/xearnas/CrMedic/issues</a>.</p>
+
+  <p style="margin-top:28px"><a href="./">← Retour à l'application</a></p>
+</main>
+</body>
+</html>

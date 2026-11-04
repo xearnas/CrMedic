@@ -88,6 +88,7 @@ src/js/drive.js       client Google Drive / Sheets (fetch et jeton injectés)
 src/js/sync.js        synchronisation local <-> classeur (dépendances injectées)
 src/js/auth.js        connexion Google Identity Services (navigateur)
 src/js/config.js      ID client OAuth
+src/privacy.html      politique de confidentialité (exigée par Google pour publier l'application)
 src/js/img.js         réduction d'image, import/export de fichiers (navigateur)
 src/js/app.js         vues, routage, événements
 unittests/            tests unitaires (node:test)
