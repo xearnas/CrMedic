@@ -352,3 +352,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
 }
+
+/* Mentions légales (aussi lues par les robots : nom de l'appli + lien confidentialité) */
+.legal { max-width: 720px; margin: 0 auto; padding: 8px 16px calc(96px + env(safe-area-inset-bottom)); text-align: center; font-size: 12px; color: var(--muted, #56635F); }
+.legal p { margin: 4px 0; }
+.legal a { color: inherit; }

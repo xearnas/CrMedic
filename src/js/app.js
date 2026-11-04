@@ -163,7 +163,7 @@ function render() {
   const titles = { dash: 'Chiffres', ca: 'CA du jour', frais: 'Ajouter un frais', profil: 'Profil et réglages', export: 'Export pour le comptable' };
   $('#view').innerHTML = views[route.name]();
   renderChrome(route);
-  document.title = `${titles[route.name]} — Mon Cabinet`;
+  document.title = `${titles[route.name]} — CrMedic`;
   const target = route.section && $(`#sec-${route.section}`);
   if (target) target.scrollIntoView({ block: 'start' });
   else window.scrollTo(0, 0);
