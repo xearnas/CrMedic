@@ -25,8 +25,15 @@ npm start            # serveur Node sans dépendance (Windows, macOS, Linux) ; o
 # puis ouvrir http://localhost:8080
 ```
 
-Pour l'utiliser sur téléphone, publier le dossier `src/` en HTTPS (GitHub Pages, Netlify…) :
-l'appareil photo n'est accessible qu'en HTTPS ou sur `localhost`.
+Pour l'utiliser sur téléphone, publier le dossier `src/` en HTTPS : l'appareil photo n'est accessible
+qu'en HTTPS ou sur `localhost`.
+
+### Déploiement (GitHub Pages)
+
+`.github/workflows/pages.yml` lance les tests puis publie `src/` à chaque push sur `main`.
+Réglage unique : dépôt public, puis **Settings → Pages → Build and deployment → Source : GitHub Actions**.
+Adresse : `https://<compte>.github.io/CrMedic/`. Ajouter `https://<compte>.github.io` (sans chemin) aux
+origines JavaScript autorisées de l'ID client Google.
 
 ## Données
 
