@@ -264,13 +264,9 @@ function dashView() {
   const yearTitle = `Année ${y} (${mo === 1 ? 'janvier' : `janvier – ${monthLabel(y, mo).split(' ')[0].toLowerCase()}`})`;
   const recent = recentEntries(state, 5);
 
-  const banner = isEmpty(state) ? `<div class="empty-banner"><div><b>Bienvenue.</b> Aucune donnée pour l'instant : saisissez votre premier CA ou découvrez l'application avec des données d'exemple.</div>
-    <div class="row"><a class="btn btn-primary" href="#/ca">Saisir le CA du jour</a><button type="button" class="btn btn-outline" data-action="load-sample">Charger des données d'exemple</button></div></div>` : '';
-
   return `<div class="page dash" data-period="${ui.period}">
     ${mobileHead(ui.period === 'month' ? monthName : `Janvier – ${monthName.split(' ')[0].toLowerCase()} ${y}`, 'Chiffres')}
     <div class="page-head"><h1>Vue d'ensemble</h1><div class="muted">Mise à jour ${esc(longDate(today()).toLowerCase())} ${y}</div></div>
-    ${banner}
     <div class="seg" role="group" aria-label="Période">
       <button type="button" data-action="set-period" data-period="month" aria-pressed="${ui.period === 'month'}">${esc(monthName.split(' ')[0])}</button>
       <button type="button" data-action="set-period" data-period="year" aria-pressed="${ui.period === 'year'}">Année ${y}</button>
