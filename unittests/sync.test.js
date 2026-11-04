@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSync, resumeAction } from '../src/js/sync.js';
+import { createSync, mergeLocalEdits, resumeAction } from '../src/js/sync.js';
 import { DriveError, emptyTables } from '../src/js/drive.js';
 import { stateToTables } from '../src/js/sheetmodel.js';
-import { emptyState, sampleState, setRevenue } from '../src/js/store.js';
+import { emptyState, sampleState, setRevenue, updateProfile } from '../src/js/store.js';
 
 const NOW = new Date(2026, 9, 29, 10, 0, 0);
 
@@ -11,7 +11,7 @@ function setup({ local = emptyState(), remote = null, saved = null, askAnswer = 
   const env = { state: local, tables: remote ? stateToTables(remote, new Date(2026, 9, 1)) : emptyTables(), saved, saves: 0, signIns: [], statuses: [], timers: [] };
   const drive = {
     getOrCreate: async () => ({ id: 'book1', created: false }),
-    readTables: async () => env.tables,
+    readTables: async () => { env.onRead?.(); return env.tables; },
     saveState: async (id, state, now) => {
       if (env.failSave) throw env.failSave;
       env.saves += 1;
@@ -122,7 +122,7 @@ test('hors ligne : la modification reste en attente et sera renvoyée', async ()
 
 test('reprise : classeur modifié ailleurs -> rechargé ; inchangé -> rien', async () => {
   const remote = sampleState(NOW);
-  const env = setup({ local: emptyState(), remote, saved: { email: 'x', fileId: 'book1', lastMaj: 'ancienne', dirty: false } });
+  const env = setup({ local: emptyState(), remote, saved: { email: 'x', fileId: 'book1', lastMaj: 'ancienne', dirty: false }, askAnswer: 'pull' });
   await env.sync.resume();
   assert.deepEqual(env.state.revenues, remote.revenues);
   assert.deepEqual(env.signIns, [{ silent: true }]);
@@ -181,4 +181,34 @@ test('déconnexion : le jeton est révoqué, les données locales restent', asyn
   assert.ok(env.signedOut);
   assert.equal(env.state, keep);
   assert.equal(env.sync.getStatus().phase, 'off');
+});
+
+test('profil modifié pendant la connexion : la lecture du Drive ne l’écrase pas', async () => {
+  const remote = updateProfile(setRevenue(emptyState(), '2026-10-01', 100, 2), { name: 'Dr Ancien', accent: '#0B6E8A' });
+  const env = setup({ local: emptyState(), remote });
+  env.onRead = () => { env.state = updateProfile(env.state, { name: 'Dr Nouveau', accent: '#4B5BB5' }); };
+  await env.sync.connect();
+  assert.equal(env.state.profile.name, 'Dr Nouveau');
+  assert.equal(env.state.profile.accent, '#4B5BB5');
+  assert.equal(env.state.revenues['2026-10-01'].amount, 100); // données du Drive conservées
+  assert.equal(env.saved.dirty, true); // l'édition part vers le Drive
+  assert.equal(env.timers.length, 1);
+});
+
+test('reprise : modification faite pendant l’attente -> envoyée, pas écrasée', async () => {
+  const base = updateProfile(setRevenue(emptyState(), '2026-10-01', 100, 2), { name: 'Dr A' });
+  const env = setup({ local: base, remote: updateProfile(base, { name: 'Dr A', cabinet: 'Distant' }), saved: { email: 'x', fileId: 'book1', lastMaj: 'ancienne', dirty: false }, askAnswer: 'pull' });
+  env.onRead = () => { env.state = updateProfile(env.state, { name: 'Dr B' }); env.saved = { ...env.saved, dirty: true }; };
+  await env.sync.resume();
+  assert.equal(env.state.profile.name, 'Dr B');
+  assert.equal(env.state.profile.cabinet, 'Distant');
+});
+
+test('mergeLocalEdits : ajouts, modifications et suppressions locaux par-dessus le Drive', () => {
+  let base = setRevenue(setRevenue(emptyState(), '2026-10-01', 100, 1), '2026-10-02', 200, 2);
+  const local = setRevenue(base, '2026-10-03', 300, 3);
+  delete local.revenues['2026-10-01'];
+  const remote = setRevenue(base, '2026-10-09', 900, 9);
+  const merged = mergeLocalEdits(base, local, remote);
+  assert.deepEqual(Object.keys(merged.revenues).sort(), ['2026-10-02', '2026-10-03', '2026-10-09']);
 });

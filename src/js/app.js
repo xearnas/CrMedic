@@ -72,7 +72,15 @@ const sync = createSync({
   setState: (next) => {
     state = next;
     if (storage) save(storage, state);
+    // Le Drive peut répondre pendant que l'utilisateur remplit un formulaire : on garde sa saisie en cours.
+    const typed = [...document.querySelectorAll('form input[id], form textarea[id], form select[id]')]
+      .filter((el) => el.type !== 'file' && el.value !== el.defaultValue)
+      .map((el) => [el.id, el.value]);
     render();
+    for (const [id, value] of typed) {
+      const el = document.getElementById(id);
+      if (el) el.value = value;
+    }
   },
   askConflict,
   onStatus: () => {

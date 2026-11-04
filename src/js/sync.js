@@ -17,6 +17,39 @@ export function resumeAction({ dirty, remoteMaj, lastMaj }) {
   return 'none';
 }
 
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Fusion à trois voies : `base` = état local au début de la synchronisation, `local` = état local à la fin
+ * (l'utilisateur a pu modifier pendant l'attente), `remote` = état lu sur le Drive.
+ * Toute modification locale faite pendant la synchronisation est conservée par-dessus l'état du Drive.
+ */
+export function mergeLocalEdits(base, local, remote) {
+  const profile = { ...remote.profile };
+  for (const k of Object.keys(local.profile ?? {})) if (!same(local.profile[k], base.profile?.[k])) profile[k] = local.profile[k];
+
+  const revenues = { ...remote.revenues };
+  for (const d of new Set([...Object.keys(base.revenues), ...Object.keys(local.revenues)])) {
+    if (same(base.revenues[d], local.revenues[d])) continue;
+    if (local.revenues[d]) revenues[d] = local.revenues[d];
+    else delete revenues[d];
+  }
+
+  const baseExp = new Map(base.expenses.map((e) => [e.id, e]));
+  const localExp = new Map(local.expenses.map((e) => [e.id, e]));
+  const expenses = new Map(remote.expenses.map((e) => [e.id, e]));
+  for (const id of new Set([...baseExp.keys(), ...localExp.keys()])) {
+    if (same(baseExp.get(id), localExp.get(id))) continue;
+    if (localExp.has(id)) expenses.set(id, localExp.get(id));
+    else expenses.delete(id);
+  }
+
+  const categories = [...remote.categories];
+  for (const c of local.categories) if (!categories.includes(c)) categories.push(c);
+
+  return { ...remote, profile, revenues, expenses: [...expenses.values()], categories };
+}
+
 const majOf = (tables) => tables?.[TABS.meta]?.find((r) => r[0] === 'maj')?.[1] ?? '';
 
 /**
@@ -52,27 +85,31 @@ export function createSync({
     set({ phase: 'synced', message: '', syncedAt: now().toISOString() });
   }
 
-  function pullState(id, tables) {
-    const { state, ignored } = tablesToState(tables, getState());
-    setState(state);
+  function pullState(id, tables, base) {
+    const local = getState();
+    const { state, ignored } = tablesToState(tables, local);
+    const edited = base && local !== base && !same(base, local); // modifié pendant l'attente : ne pas l'écraser
+    setState(edited ? mergeLocalEdits(base, local, state) : state);
     persist.write({ ...persist.read(), fileId: id, lastMaj: majOf(tables), dirty: false });
     set({ phase: 'synced', message: '', syncedAt: now().toISOString(), ignored });
+    if (edited) pushSoon();
   }
 
   /** Première rencontre entre cet appareil et ce classeur : choisir le sens. */
-  async function reconcile(id, tables) {
+  async function reconcile(id, tables, base) {
     tablesToState(tables, getState()); // lève SheetFormatError si les en-têtes ont été modifiés, avant toute décision
     const plan = planSync({ localEmpty: isEmpty(getState()), remoteEmpty: tablesAreEmpty(tables) });
-    if (plan === 'none') return pullState(id, tables);
-    if (plan === 'pull') return pullState(id, tables);
+    if (plan === 'none') return pullState(id, tables, base);
+    if (plan === 'pull') return pullState(id, tables, base);
     if (plan === 'push') return pushState(id);
     const choice = await askConflict();
-    if (choice === 'pull') return pullState(id, tables);
+    if (choice === 'pull') return pullState(id, tables, base);
     if (choice === 'push') return pushState(id);
     throw Object.assign(new Error('Connexion annulée.'), { cancelled: true });
   }
 
   async function connect() {
+    const base = getState();
     set({ phase: 'connecting', message: '' });
     try {
       await auth.signIn({ silent: false });
@@ -81,7 +118,7 @@ export function createSync({
       set({ email });
       const { id } = await drive.getOrCreate();
       set({ fileId: id });
-      await reconcile(id, await drive.readTables(id));
+      await reconcile(id, await drive.readTables(id), base);
     } catch (e) {
       if (e.cancelled) {
         await disconnect();
@@ -97,6 +134,7 @@ export function createSync({
   async function resume() {
     const saved = persist.read();
     if (!saved) return;
+    const base = getState();
     set({ phase: 'connecting', email: saved.email, fileId: saved.fileId, message: '' });
     try {
       await auth.signIn({ silent: true });
@@ -108,13 +146,15 @@ export function createSync({
       set({ fileId: id });
       const tables = await drive.readTables(id);
       tablesToState(tables, getState()); // valide les en-têtes avant de décider du sens
-      if (id !== saved.fileId) return await reconcile(id, tables);
-      const action = resumeAction({ dirty: saved.dirty, remoteMaj: majOf(tables), lastMaj: saved.lastMaj });
-      if (action === 'pull') return pullState(id, tables);
+      if (id !== saved.fileId) return await reconcile(id, tables, base);
+      // l'utilisateur a pu modifier pendant l'attente : relire l'indicateur, pas la valeur lue au démarrage
+      const dirty = Boolean(persist.read()?.dirty);
+      const action = resumeAction({ dirty, remoteMaj: majOf(tables), lastMaj: saved.lastMaj });
+      if (action === 'pull') return pullState(id, tables, base);
       if (action === 'push') return await pushState(id);
       if (action === 'ask') {
         const choice = await askConflict();
-        if (choice === 'pull') return pullState(id, tables);
+        if (choice === 'pull') return pullState(id, tables, base);
         if (choice === 'push') return await pushState(id);
       }
       set({ phase: 'synced', message: '', syncedAt: now().toISOString() });
