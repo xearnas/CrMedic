@@ -43,7 +43,10 @@ export function createDrive({ fetchFn, getToken }) {
       try {
         detail = (await res.json())?.error?.message ?? '';
       } catch { /* corps non JSON */ }
-      const msg = res.status === 401 ? 'Connexion Google expirée.' : res.status === 403 ? `Accès refusé par Google. ${detail}`.trim() : `Erreur Google (${res.status}). ${detail}`.trim();
+      const scopeMissing = res.status === 403 && /insufficient authentication scopes|insufficientPermissions/i.test(detail);
+      const msg = scopeMissing
+        ? "Autorisation Drive manquante : reconnectez-vous et cochez la case d'accès aux fichiers de l'application (Voir, modifier, créer et supprimer uniquement les fichiers Drive utilisés avec cette application)."
+        : res.status === 401 ? 'Connexion Google expirée.' : res.status === 403 ? `Accès refusé par Google. ${detail}`.trim() : `Erreur Google (${res.status}). ${detail}`.trim();
       throw new DriveError(msg, res.status);
     }
     return res.status === 204 ? null : res.json();

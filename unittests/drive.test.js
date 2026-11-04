@@ -5,7 +5,7 @@ import { FILE_NAME, TABS, stateToTables, tablesToState } from '../src/js/sheetmo
 import { sampleState } from '../src/js/store.js';
 
 /** Faux serveur Google : un seul classeur en mémoire, avec la grille de chaque onglet. */
-function fakeGoogle({ files = [], failWith = null } = {}) {
+function fakeGoogle({ files = [], failWith = null, failMessage = 'boom' } = {}) {
   const srv = { files: [...files], book: null, calls: [] };
   const json = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
   srv.fetchFn = async (url, init = {}) => {
@@ -13,7 +13,7 @@ function fakeGoogle({ files = [], failWith = null } = {}) {
     const body = init.body ? JSON.parse(init.body) : null;
     srv.calls.push(`${method} ${url.replace(/\?.*/, '')}`);
     assert.equal(init.headers.Authorization, 'Bearer tok');
-    if (failWith) return json({ error: { message: 'boom' } }, failWith);
+    if (failWith) return json({ error: { message: failMessage } }, failWith);
     const u = new URL(url);
     if (u.pathname === '/drive/v3/files') {
       const q = u.searchParams.get('q');
@@ -117,6 +117,8 @@ test('un onglet supprimé par l’utilisateur est recréé', async () => {
 test('les erreurs Google deviennent des DriveError lisibles', async () => {
   await assert.rejects(mk(fakeGoogle({ failWith: 401 })).getOrCreate(), (e) => e instanceof DriveError && e.status === 401 && /expirée/.test(e.message));
   await assert.rejects(mk(fakeGoogle({ failWith: 403 })).getOrCreate(), (e) => e.status === 403 && /refusé/.test(e.message));
+  const noScope = fakeGoogle({ failWith: 403, failMessage: 'Request had insufficient authentication scopes.' });
+  await assert.rejects(mk(noScope).getOrCreate(), (e) => e.status === 403 && /cochez la case/.test(e.message));
   const offline = createDrive({ fetchFn: async () => { throw new TypeError('fetch failed'); }, getToken: async () => 'tok' });
   await assert.rejects(offline.getOrCreate(), (e) => e.status === 0 && /Réseau/.test(e.message));
 });

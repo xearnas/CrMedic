@@ -2,7 +2,8 @@
 // Le jeton dure environ une heure ; il est renouvelé silencieusement quand c'est possible.
 import { GOOGLE_CLIENT_ID } from './config.js';
 
-export const SCOPES = 'https://www.googleapis.com/auth/drive.file openid email profile';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+export const SCOPES = `${DRIVE_SCOPE} openid email profile`;
 const GIS_URL = 'https://accounts.google.com/gsi/client';
 
 export class AuthError extends Error {}
@@ -44,6 +45,10 @@ async function ensureClient() {
       pending = null;
       if (!p) return;
       if (resp.error) return p.reject(new AuthError(resp.error_description || resp.error));
+      if (!google.accounts.oauth2.hasGrantedAllScopes(resp, DRIVE_SCOPE)) {
+        google.accounts.oauth2.revoke(resp.access_token, () => {});
+        return p.reject(new AuthError("Accès au Drive non accordé : à la connexion, cochez la case « Voir, modifier, créer et supprimer uniquement les fichiers Drive utilisés avec cette application »."));
+      }
       token = resp.access_token;
       expiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000 - 60000;
       p.resolve(token);
