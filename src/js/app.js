@@ -186,6 +186,7 @@ const SYNC_LABELS = {
 function syncBadge() {
   const { phase } = sync.getStatus();
   if (phase === 'off') return '';
+  if (phase === 'login') return `<button type="button" class="sync-badge sync-login" data-action="google-reconnect" title="Reconnecter le compte Google">${svg('cloud', 16, 2)}${SYNC_LABELS[phase]}</button>`;
   return `<a class="sync-badge sync-${phase}" href="#/profil/google" title="Compte Google et Drive">${svg('cloud', 16, 2)}${SYNC_LABELS[phase]}</a>`;
 }
 
@@ -672,6 +673,7 @@ const actions = {
     }
   },
   'google-connect': () => sync.connect(),
+  'google-reconnect': () => sync.resume({ silent: false }),
   'google-sync': () => sync.flush(),
   'google-disconnect': () => {
     if (!confirm('Se déconnecter de Google ? Vos données restent sur cet appareil et dans le classeur du Drive.')) return;

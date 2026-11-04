@@ -212,3 +212,13 @@ test('mergeLocalEdits : ajouts, modifications et suppressions locaux par-dessus 
   const merged = mergeLocalEdits(base, local, remote);
   assert.deepEqual(Object.keys(merged.revenues).sort(), ['2026-10-02', '2026-10-03', '2026-10-09']);
 });
+
+test('reconnexion par clic : fenêtre Google (non silencieuse), session et données conservées', async () => {
+  const local = setRevenue(emptyState(), '2026-10-01', 100, 2);
+  const env = setup({ local, saved: { email: 'x', fileId: 'book1', lastMaj: '', dirty: true } });
+  env.tables = stateToTables(local, new Date(2026, 9, 1));
+  await env.sync.resume({ silent: false });
+  assert.deepEqual(env.signIns, [{ silent: false }]);
+  assert.equal(env.sync.getStatus().phase, 'synced');
+  assert.equal(env.state.revenues['2026-10-01'].amount, 100);
+});

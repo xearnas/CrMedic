@@ -256,7 +256,7 @@ main { display: block; }
 /* ---------- Synchronisation Google ---------- */
 .sync-badge {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 18px;
-  font-size: 13px; font-weight: 600; text-decoration: none; background: var(--accent-soft); color: var(--accent-dark);
+  font-size: 13px; font-weight: 600; text-decoration: none; border: 0; font-family: inherit; cursor: pointer; background: var(--accent-soft); color: var(--accent-dark);
 }
 .sync-badge.sync-pending, .sync-badge.sync-connecting { background: #EEECE4; color: var(--ink-soft); }
 .sync-badge.sync-offline { background: #FFF1CC; color: #6B4B00; }

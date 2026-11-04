@@ -130,16 +130,16 @@ export function createSync({
     }
   }
 
-  /** Au démarrage : reprend la session si l'utilisateur était connecté. */
-  async function resume() {
+  /** Au démarrage (silencieux) ou sur clic « Reconnecter » (`silent: false`) : reprend la session existante. */
+  async function resume({ silent = true } = {}) {
     const saved = persist.read();
     if (!saved) return;
     const base = getState();
     set({ phase: 'connecting', email: saved.email, fileId: saved.fileId, message: '' });
     try {
-      await auth.signIn({ silent: true });
+      await auth.signIn({ silent });
     } catch {
-      return set({ phase: 'login', message: 'Reconnectez-vous pour synchroniser.' });
+      return set({ phase: 'login', message: silent ? 'Reconnectez-vous pour synchroniser.' : 'Connexion Google annulée ou refusée.' });
     }
     try {
       const { id } = await drive.getOrCreate();
