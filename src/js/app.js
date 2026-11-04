@@ -1,6 +1,6 @@
 // Interface : routage par hash, rendu des vues, gestion des événements.
 import {
-  WEEKDAY_HEADS, daysInMonth, escapeHtml as esc, eur, eur2, firstWeekdayOffset, initials, longDate, monthLabel,
+  WEEKDAY_HEADS, amountCompact, daysInMonth, escapeHtml as esc, eur, eur2, firstWeekdayOffset, initials, longDate, monthLabel,
   parseAmount, parseCount, pct, shiftMonth, shortDate, todayISO, toISO,
 } from './format.js';
 import {
@@ -338,7 +338,7 @@ function caPanel() {
     cells.push(`<div><button type="button" class="day ${r || future ? '' : 'empty'} ${iso === t ? 'today' : ''}" style="${bg}"
       data-action="pick-day" data-date="${iso}" aria-pressed="${ui.sel === iso}" ${future ? 'disabled' : ''}
       aria-label="${d} ${monthLabel(y, m).split(' ')[0].toLowerCase()}, ${future ? 'à venir' : r ? eur(r.amount) : 'pas de saisie'}">
-      <span class="d">${d}</span><span class="v">${r ? Math.round(r.amount) : future ? '' : '—'}</span></button></div>`);
+      <span class="d">${d}</span><span class="v">${r ? dayValue(r.amount) : future ? '' : '—'}</span></button></div>`);
   }
   const r = state.revenues[ui.sel];
   const lastDays = Object.entries(state.revenues).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 3);
@@ -417,6 +417,12 @@ function expPanel() {
         <div class="item-amount cost" style="font-size:15px">− ${eur2(e.amount)}</div>
         <button type="button" class="icon-btn" data-action="del-expense" data-id="${esc(e.id)}" aria-label="Supprimer le frais ${esc(e.note || e.category)}">${svg('trash', 18)}</button></div>`).join('') : '<p class="muted" style="font-size:14px">Aucun frais saisi.</p>'}
     </div>`;
+}
+
+/** Montant d'une case du calendrier : entier en gras, centimes (jamais arrondis) en petit dessous. */
+function dayValue(amount) {
+  const [int, dec] = amountCompact(amount).split(',');
+  return dec ? `${int}<small class="cents">,${dec}</small>` : int;
 }
 
 const renderCA = () => { $('#panel-ca').innerHTML = caPanel(); };

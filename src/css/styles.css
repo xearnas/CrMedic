@@ -179,7 +179,8 @@ main { display: block; }
   display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 2px;
 }
 .day .d { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
-.day .v { font-size: 13px; font-weight: 700; min-height: 1.2em; }
+.day .v { font-size: 13px; font-weight: 700; min-height: 1.2em; white-space: nowrap; max-width: 100%; overflow: hidden; letter-spacing: -.02em; }
+.day .cents { display: block; font-size: 9.5px; font-weight: 600; color: var(--muted); line-height: 1.1; letter-spacing: 0; }
 .day.empty { border-color: var(--line); }
 .day.today .d { color: var(--accent); font-weight: 800; }
 .day[aria-pressed="true"] { border-color: var(--accent); }
@@ -332,7 +333,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
   .input-money.cost { height: 52px; }
   .input-money.cost input { font-size: 22px; }
   .day { min-height: 54px; }
-  .day .v { font-size: 12px; }
+  .day .v { font-size: 11px; }
   .cal-grid { gap: 4px; }
   .last-days { display: flex; }
   .scan-hint { display: block; }

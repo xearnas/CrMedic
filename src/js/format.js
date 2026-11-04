@@ -7,14 +7,17 @@ export const WEEKDAY_HEADS = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
 
 const pad = (n) => String(n).padStart(2, '0');
 
-/** 1234.5 -> "1 235 €" (arrondi à l'euro). */
+/** 1234.5 -> "1 234,50 €" : les montants ne sont jamais arrondis, toujours 2 décimales. */
 export function eur(n) {
-  return Math.round(n || 0).toLocaleString('fr-FR') + ' €';
+  return (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 }
 
-/** 1234.5 -> "1 234,50 €". */
-export function eur2(n) {
-  return (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+/** Alias historique de `eur`. */
+export const eur2 = eur;
+
+/** Montant compact pour une case de calendrier : "405" si entier, sinon "405,50" (jamais arrondi). */
+export function amountCompact(n) {
+  return Number.isInteger(n) ? String(n) : n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Pourcentage entier, ou "—" si la base est nulle. */

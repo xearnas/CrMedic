@@ -18,8 +18,12 @@ test('parseCount : vide -> null, nombre -> entier, texte -> NaN', () => {
   assert.ok(Number.isNaN(f.parseCount('x')));
 });
 
-test('eur arrondit et pct gère la base nulle', () => {
-  assert.match(f.eur(1234.6), /^1\s?235\s€$/);
+test('eur affiche toujours 2 décimales sans arrondir, et pct gère la base nulle', () => {
+  assert.match(f.eur(1234.6), /^1\s?234,60\s€$/);
+  assert.match(f.eur(405), /^405,00\s€$/);
+  assert.match(f.eur(0.1 + 0.2), /^0,30\s€$/);
+  assert.equal(f.amountCompact(405), '405');
+  assert.equal(f.amountCompact(405.5), '405,50');
   assert.equal(f.pct(30, 100), '30 %');
   assert.equal(f.pct(5, 0), '—');
 });
