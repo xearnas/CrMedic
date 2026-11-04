@@ -9,6 +9,13 @@ import {
 } from './store.js';
 import { categoryTotals, dailySeries, monthRange, monthlySeries, periodStats, recentEntries, yearRange } from './stats.js';
 import { downloadText, downscaleImage, formatSize, readText } from './img.js';
+import { MONTHS_FR } from './format.js';
+import { buildReport, periodOptions, reportFileName, resolvePeriod } from './report.js';
+import { downloadBinary, loadExcelJS, writeXlsx } from './xlsx.js';
+import * as auth from './auth.js';
+import { createDrive, fileUrl } from './drive.js';
+import { createSync } from './sync.js';
+import { FILE_NAME } from './sheetmodel.js';
 
 // ---------- État ----------
 function safeStorage() {
@@ -26,6 +33,7 @@ const start = new Date();
 const ui = {
   y: start.getFullYear(), m: start.getMonth() + 1, sel: todayISO(start),
   period: 'month', menu: false, cat: null, doc: null, accent: null,
+  exp: { y: start.getFullYear(), period: 'year', sheet: 0 },
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -35,8 +43,46 @@ function commit(next) {
     toast('Stockage du navigateur plein : exportez vos données (Profil) pour ne rien perdre.', true);
     return false;
   }
+  sync.pushSoon();
   return true;
 }
+
+// ---------- Synchronisation Google Drive ----------
+const PERSIST_KEY = 'crmedic.google.v1';
+const persist = {
+  read() {
+    try { return JSON.parse(storage?.getItem(PERSIST_KEY)); } catch { return null; }
+  },
+  write(v) {
+    try { if (v) storage?.setItem(PERSIST_KEY, JSON.stringify(v)); else storage?.removeItem(PERSIST_KEY); } catch { /* stockage indisponible */ }
+  },
+};
+
+function askConflict() {
+  if (confirm("Le fichier « " + FILE_NAME + " » du Drive contient déjà des données, différentes de celles de cet appareil.\n\nOK : charger les données du Drive (celles de cet appareil seront remplacées).\nAnnuler : autres choix.")) return 'pull';
+  if (confirm('Remplacer le contenu du fichier Drive par les données de cet appareil ?\n\nOK : écraser le Drive.\nAnnuler : ne pas se connecter.')) return 'push';
+  return 'cancel';
+}
+
+const sync = createSync({
+  drive: createDrive({ fetchFn: (...a) => fetch(...a), getToken: auth.getToken }),
+  auth,
+  persist,
+  getState: () => state,
+  setState: (next) => {
+    state = next;
+    if (storage) save(storage, state);
+    render();
+  },
+  askConflict,
+  onStatus: () => {
+    renderChrome();
+    const sec = $('#sec-google');
+    if (sec) sec.innerHTML = googleInner();
+  },
+});
+
+const isSyncing = () => sync.getStatus().phase !== 'off';
 
 let toastTimer;
 function toast(msg, isError = false) {
@@ -67,6 +113,8 @@ const ICONS = {
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   download: '<path d="M12 4v12M7 11l5 5 5-5M4 20h16"/>',
+  sheet: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/>',
+  cloud: '<path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 9a4.5 4.5 0 0 1 .5 9z"/>',
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5"/>',
 };
 const svg = (name, size = 20, sw = 2) =>
@@ -102,7 +150,7 @@ function applyAccent(hex) {
 // ---------- Routage ----------
 function parseRoute() {
   const [name = '', section = ''] = location.hash.replace(/^#\/?/, '').split('/');
-  if (name === 'ca' || name === 'frais' || name === 'profil') return { name, section };
+  if (name === 'ca' || name === 'frais' || name === 'profil' || name === 'export') return { name, section };
   return { name: 'dash', section: '' };
 }
 
@@ -111,8 +159,8 @@ function render() {
   ui.menu = false;
   ui.accent = null;
   applyAccent(state.profile.accent);
-  const views = { dash: dashView, ca: () => saisieView('ca'), frais: () => saisieView('frais'), profil: profilView };
-  const titles = { dash: 'Chiffres', ca: 'CA du jour', frais: 'Ajouter un frais', profil: 'Profil et réglages' };
+  const views = { dash: dashView, ca: () => saisieView('ca'), frais: () => saisieView('frais'), profil: profilView, export: exportView };
+  const titles = { dash: 'Chiffres', ca: 'CA du jour', frais: 'Ajouter un frais', profil: 'Profil et réglages', export: 'Export pour le comptable' };
   $('#view').innerHTML = views[route.name]();
   renderChrome(route);
   document.title = `${titles[route.name]} — Mon Cabinet`;
@@ -121,6 +169,16 @@ function render() {
   else window.scrollTo(0, 0);
   if (route.name === 'profil') $('#view').classList.add('profil');
   else $('#view').classList.remove('profil');
+}
+
+const SYNC_LABELS = {
+  connecting: 'Connexion…', pending: 'Envoi en cours…', synced: 'Synchronisé', offline: 'Hors ligne',
+  login: 'Reconnecter Google', error: 'Erreur de synchronisation',
+};
+function syncBadge() {
+  const { phase } = sync.getStatus();
+  if (phase === 'off') return '';
+  return `<a class="sync-badge sync-${phase}" href="#/profil/google" title="Compte Google et Drive">${svg('cloud', 16, 2)}${SYNC_LABELS[phase]}</a>`;
 }
 
 function renderChrome(route = parseRoute()) {
@@ -142,17 +200,20 @@ function renderChrome(route = parseRoute()) {
             <a role="menuitem" href="#/profil/profil">${svg('user')}Modifier le profil &amp; la photo</a>
             <a role="menuitem" href="#/profil/apparence">${svg('palette')}Couleurs de l'application</a>
             <a role="menuitem" href="#/profil/categories">${svg('tag')}Catégories de frais</a>
+            <a role="menuitem" href="#/profil/google">${svg('cloud')}Compte Google &amp; Drive</a>
             <a role="menuitem" href="#/profil/donnees">${svg('download')}Sauvegarde des données</a></div>` : ''}
         </div>
         <a class="btn navlink" href="#/" ${cur('dash')}>${svg('chart', 18)}Chiffres</a>
+        <a class="btn navlink" href="#/export" ${cur('export')}>${svg('sheet', 18)}Export Excel</a>
       </div>
       <div class="topbar-actions">
+        ${syncBadge()}
         <a class="btn btn-primary" href="#/ca">${svg('plus', 18, 2.2)}Saisir le CA du jour</a>
         <a class="btn btn-outline" href="#/frais">${svg('camera', 18)}Ajouter un frais</a>
       </div></div>`;
     const tab = (href, n, icon, label, extra = '') =>
       `<a class="tab ${extra}" href="${href}" ${cur(n)}>${svg(icon, 22)}${label}</a>`;
-    $('#tabbar').innerHTML = tab('#/ca', 'ca', 'euro', 'CA') + tab('#/frais', 'frais', 'camera', 'Frais', 'cost') + tab('#/', 'dash', 'chart', 'Chiffres');
+    $('#tabbar').innerHTML = tab('#/ca', 'ca', 'euro', 'CA') + tab('#/frais', 'frais', 'camera', 'Frais', 'cost') + tab('#/', 'dash', 'chart', 'Chiffres') + tab('#/export', 'export', 'sheet', 'Export');
   }
 }
 
@@ -361,6 +422,97 @@ function expPanel() {
 const renderCA = () => { $('#panel-ca').innerHTML = caPanel(); };
 const renderExp = () => { $('#panel-frais').innerHTML = expPanel(); };
 
+// ---------- Export pour le comptable ----------
+const colLetter = (i) => String.fromCharCode(65 + i);
+
+function cellText(c) {
+  if (c.v === '' || c.v === null || c.v === undefined) return '';
+  switch (c.fmt) {
+    case 'money': return eur2(c.v);
+    case 'pct': return Math.round(c.v * 100) + ' %';
+    case 'date': { const [y, m, d] = c.v.split('-'); return `${d}/${m}/${y}`; }
+    case 'month': { const [y, m] = c.v.split('-').map(Number); return `${MONTHS_FR[m - 1]} ${y}`; }
+    case 'int': return String(c.v);
+    default: return String(c.v);
+  }
+}
+
+/** Aperçu d'un onglet, présenté comme une feuille de calcul (lettres de colonnes, numéros de lignes). */
+function xlGrid(sheet) {
+  const nCols = sheet.widths.length;
+  const rows = sheet.rows.map((cells, ri) => {
+    const tds = Array.from({ length: nCols }, (_, ci) => {
+      const c = cells[ci];
+      if (!c) return '<td></td>';
+      const cls = [c.kind ?? '', ['money', 'int', 'pct'].includes(c.fmt) ? 'num' : ''].filter(Boolean).join(' ');
+      const tip = c.f ? ` title="=${esc(c.f)}"` : '';
+      return `<td class="${cls}"${tip}>${esc(cellText(c))}</td>`;
+    }).join('');
+    return `<tr><th scope="row">${ri + 1}</th>${tds}</tr>`;
+  }).join('');
+  return `<div class="xl-scroll"><table class="xl"><colgroup><col class="xl-rn">${sheet.widths.map((w) => `<col style="width:${Math.round(w * 8.5)}px">`).join('')}</colgroup>
+    <thead><tr><th></th>${sheet.widths.map((_, i) => `<th scope="col">${colLetter(i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function exportView() {
+  const years = new Set([start.getFullYear(), ui.exp.y]);
+  for (const iso of Object.keys(state.revenues)) years.add(Number(iso.slice(0, 4)));
+  for (const e of state.expenses) years.add(Number(e.date.slice(0, 4)));
+  const period = resolvePeriod(ui.exp.y, ui.exp.period);
+  const report = buildReport(state, period);
+  const sheetIdx = Math.min(ui.exp.sheet, report.sheets.length - 1);
+  const sheet = report.sheets[sheetIdx];
+  const fileName = reportFileName(period);
+  const nOps = Object.keys(state.revenues).filter((d) => d >= `${period.y}-${String(period.m1).padStart(2, '0')}` && d.slice(0, 7) <= `${period.y}-${String(period.m2).padStart(2, '0')}`).length
+    + state.expenses.filter((e) => e.date.slice(0, 4) === String(period.y) && Number(e.date.slice(5, 7)) >= period.m1 && Number(e.date.slice(5, 7)) <= period.m2).length;
+
+  return `<div class="page">
+    ${mobileHead('Comptable', 'Export Excel')}
+    <div class="page-head"><h1>Export pour le comptable</h1><div class="muted">Un classeur Excel mis en forme, généré à partir de vos données</div></div>
+    <section class="card stack gap-14">
+      <div class="row" style="align-items:flex-end;gap:14px">
+        <div class="field" style="flex:1 1 140px"><label for="exp-year">Année</label>
+          <select class="input" id="exp-year" data-exp="y">${[...years].sort((a, b) => b - a).map((y) => `<option value="${y}" ${y === ui.exp.y ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
+        <div class="field" style="flex:2 1 220px"><label for="exp-period">Période</label>
+          <select class="input" id="exp-period" data-exp="period">${periodOptions().map((o) => `<option value="${o.id}" ${o.id === ui.exp.period ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
+        <button type="button" class="btn btn-primary" data-action="download-xlsx" style="height:52px;flex:1 1 200px">${svg('download', 18, 2.2)}Télécharger (.xlsx)</button>
+      </div>
+      <p class="muted" style="font-size:14px">${nOps ? `${nOps} opération${nOps > 1 ? 's' : ''} sur la période.` : 'Aucune opération sur cette période : le classeur sera généré vide.'}
+        Les totaux sont de vraies formules Excel : votre comptable peut les vérifier ou les compléter.</p>
+    </section>
+    <section class="xl-frame" aria-label="Aperçu du classeur ${esc(fileName)}">
+      <div class="xl-bar">${svg('sheet', 18, 2)}<b>${esc(fileName)}</b><span>Aperçu</span></div>
+      ${xlGrid(sheet)}
+      <div class="xl-tabs" role="tablist">${report.sheets.map((sh, i) => `<button type="button" role="tab" class="xl-tab" data-action="exp-sheet" data-i="${i}" aria-selected="${i === sheetIdx}">${esc(sh.name)}</button>`).join('')}</div>
+    </section>
+  </div>`;
+}
+
+// ---------- Compte Google ----------
+function googleInner() {
+  const st = sync.getStatus();
+  const head = `<div><h2 style="font-size:18px">Compte Google &amp; base de données</h2>
+    <p class="muted" style="font-size:14px;margin-top:4px">Vos données sont enregistrées dans un classeur « ${esc(FILE_NAME)} » de votre Drive, utilisable directement par votre comptable. Ne renommez pas ce fichier : l'application le retrouve par son nom.</p></div>`;
+  if (!auth.isConfigured()) {
+    return `${head}<p class="notice">La connexion Google n'est pas encore configurée sur ce site (identifiant client manquant dans <code>config.js</code>, voir le README).</p>`;
+  }
+  if (st.phase === 'off') {
+    return `${head}<div class="row"><button type="button" class="btn btn-primary" data-action="google-connect">${svg('cloud', 18)}Se connecter avec Google</button></div>
+      ${st.message ? `<p class="error">${esc(st.message)}</p>` : ''}`;
+  }
+  const label = { connecting: 'Connexion en cours…', pending: 'Modifications en attente d\'envoi…', synced: st.syncedAt ? `Synchronisé à ${new Date(st.syncedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'Synchronisé', offline: 'Hors ligne : vos saisies sont conservées et seront envoyées au retour du réseau.', login: 'Session expirée : reconnectez-vous.', error: 'La synchronisation a échoué.' }[st.phase];
+  return `${head}
+    <div class="google-box">
+      <div class="google-line"><span class="sync-dot sync-${st.phase}"></span><div><b>${esc(st.email || 'Compte Google')}</b><div class="muted" style="font-size:14px">${esc(label)}</div></div></div>
+      ${st.message && st.phase !== 'offline' ? `<p class="error">${esc(st.message)}</p>` : ''}
+      ${st.ignored ? `<p class="notice">${st.ignored} ligne${st.ignored > 1 ? 's' : ''} du classeur ${st.ignored > 1 ? 'ont été ignorées' : 'a été ignorée'} (date, montant ou catégorie invalide).</p>` : ''}
+    </div>
+    <div class="row">
+      ${st.fileId ? `<a class="btn btn-outline" href="${esc(fileUrl(st.fileId))}" target="_blank" rel="noopener">${svg('sheet', 18)}Ouvrir le classeur</a>` : ''}
+      ${st.phase === 'login' ? `<button type="button" class="btn btn-primary" data-action="google-connect">Se reconnecter</button>` : `<button type="button" class="btn btn-outline" data-action="google-sync">Synchroniser maintenant</button>`}
+      <button type="button" class="btn btn-danger" data-action="google-disconnect">Se déconnecter</button></div>`;
+}
+
 // ---------- Profil ----------
 function profilView() {
   const p = state.profile;
@@ -379,6 +531,7 @@ function profilView() {
         </div></div></section>
     <section class="card stack gap-14" id="sec-apparence" style="padding:24px"><h2 style="font-size:18px">Apparence</h2>${appearanceInner()}</section>
     <section class="card stack gap-14" id="sec-categories" style="padding:24px">${categoriesInner()}</section>
+    <section class="card stack gap-14" id="sec-google" style="padding:24px">${googleInner()}</section>
     <section class="card stack gap-14" id="sec-donnees" style="padding:24px"><div><h2 style="font-size:18px">Sauvegarde des données</h2>
       <p class="muted" style="font-size:14px;margin-top:4px">Les données restent dans ce navigateur, sur cet appareil. Exportez-les régulièrement, ou pour les transférer du PC vers le téléphone.</p></div>
       <div class="row">
@@ -494,14 +647,36 @@ const actions = {
     toast('Export téléchargé');
   },
   'open-import': () => $('#in-import').click(),
+  'exp-sheet': (el) => { ui.exp.sheet = Number(el.dataset.i); $('#view').innerHTML = exportView(); },
+  'download-xlsx': async (el) => {
+    el.disabled = true;
+    try {
+      const period = resolvePeriod(ui.exp.y, ui.exp.period);
+      const buf = await writeXlsx(await loadExcelJS(), buildReport(state, period), { accent: state.profile.accent });
+      downloadBinary(reportFileName(period), buf);
+      toast('Classeur téléchargé');
+    } catch (e) {
+      toast(e.message || 'Export impossible.', true);
+    } finally {
+      el.disabled = false;
+    }
+  },
+  'google-connect': () => sync.connect(),
+  'google-sync': () => sync.flush(),
+  'google-disconnect': () => {
+    if (!confirm('Se déconnecter de Google ? Vos données restent sur cet appareil et dans le classeur du Drive.')) return;
+    sync.disconnect();
+    toast('Déconnecté de Google');
+  },
   'load-sample': () => {
+    if (isSyncing()) { toast("Déconnectez d'abord le compte Google : les données d'exemple écraseraient votre classeur.", true); return; }
     if (!isEmpty(state) && !confirm("Remplacer vos données par des données d'exemple ?")) return;
     commit({ ...sampleState(), profile: state.profile, categories: state.categories });
     toast("Données d'exemple chargées");
     render();
   },
   'clear-all': () => {
-    if (!confirm('Effacer toutes les saisies (CA et frais) ? Cette action est définitive.')) return;
+    if (!confirm(`Effacer toutes les saisies (CA et frais)${isSyncing() ? ' sur cet appareil ET dans le classeur Drive' : ''} ? Cette action est définitive.`)) return;
     commit({ ...state, revenues: {}, expenses: [] });
     toast('Données effacées');
   },
@@ -591,6 +766,12 @@ document.addEventListener('input', (ev) => {
 
 document.addEventListener('change', async (ev) => {
   const input = ev.target;
+  if (input.dataset?.exp) {
+    ui.exp[input.dataset.exp] = input.dataset.exp === 'y' ? Number(input.value) : input.value;
+    $('#view').innerHTML = exportView();
+    $(`[data-exp="${input.dataset.exp}"]`)?.focus();
+    return;
+  }
   const file = input.files?.[0];
   if (!file) return;
   if (input.id === 'in-cam' || input.id === 'in-file') await attachFile(file);
@@ -632,3 +813,4 @@ document.body.insertAdjacentHTML('beforeend', `
   <input type="file" id="in-import" accept="application/json,.json" hidden>`);
 window.addEventListener('hashchange', render);
 render();
+if (auth.isConfigured()) sync.resume();
