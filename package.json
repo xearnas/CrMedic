@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Suivi du CA et des frais d'un cabinet de médecine générale (PC et téléphone)",
   "scripts": {
-    "start": "python3 -m http.server 8080 -d src",
+    "start": "node scripts/serve.mjs",
     "test": "./unittests/run.sh"
   }
 }

@@ -21,7 +21,7 @@ La navigation passe par la barre du haut sur PC et par une barre d'onglets en ba
 Les modules ES nécessitent un serveur HTTP (pas d'ouverture directe en `file://`) :
 
 ```bash
-npm start            # ou : python3 -m http.server 8080 -d src
+npm start            # serveur Node sans dépendance (Windows, macOS, Linux) ; ou : node scripts/serve.mjs 8080
 # puis ouvrir http://localhost:8080
 ```
 
