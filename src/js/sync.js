@@ -60,7 +60,7 @@ export function createSync({
   drive, auth, persist, getState, setState, askConflict, onStatus = () => {},
   schedule = setTimeout, cancel = clearTimeout, delay = 1500, now = () => new Date(),
 }) {
-  let status = { phase: 'off', email: '', fileId: '', message: '', syncedAt: null, ignored: 0 };
+  let status = { phase: 'off', email: '', fileId: '', message: '', syncedAt: null, ignored: 0, fileCount: 1, checkedAt: null };
   let timer = null;
   let running = null;
   let again = false;
@@ -117,8 +117,8 @@ export function createSync({
       const email = await auth.fetchEmail();
       persist.write({ email, fileId: '', lastMaj: '', dirty: false });
       set({ email });
-      const { id } = await drive.getOrCreate();
-      set({ fileId: id });
+      const { id, count } = await drive.getOrCreate();
+      set({ fileId: id, fileCount: count ?? 1 });
       await reconcile(id, await drive.readTables(id), base);
     } catch (e) {
       if (e.cancelled) {
@@ -143,8 +143,8 @@ export function createSync({
       return set({ phase: 'login', message: silent ? 'Reconnectez-vous pour synchroniser.' : 'Connexion Google annulée ou refusée.' });
     }
     try {
-      const { id } = await drive.getOrCreate();
-      set({ fileId: id });
+      const { id, count } = await drive.getOrCreate();
+      set({ fileId: id, fileCount: count ?? 1 });
       const tables = await drive.readTables(id);
       tablesToState(tables, getState()); // valide les en-têtes avant de décider du sens
       if (id !== saved.fileId) return await reconcile(id, tables, base);
@@ -168,17 +168,18 @@ export function createSync({
    * Relit le classeur en cours de session (retour sur l'onglet, minuteur) : récupère ce qu'un autre appareil
    * a envoyé. Ne fait rien si une session n'est pas active ou si un envoi est en cours / en attente.
    */
-  async function refresh() {
+  async function refresh({ force = false } = {}) {
     const saved = persist.read();
     const { phase } = status;
-    if (!saved?.fileId || running || refreshing || timer) return;
-    if (!['synced', 'offline', 'error'].includes(phase)) return;
+    if (!saved?.fileId || running || refreshing) return;
+    if (!force && (timer || !['synced', 'offline', 'error'].includes(phase))) return;
     refreshing = true;
     const base = getState();
     try {
       const id = saved.fileId;
       const tables = await drive.readTables(id);
       tablesToState(tables, getState());
+      set({ checkedAt: now().toISOString() });
       const cur = persist.read() ?? saved;
       const action = resumeAction({ dirty: Boolean(cur.dirty), remoteMaj: majOf(tables), lastMaj: cur.lastMaj });
       if (action === 'pull') return pullState(id, tables, base);
@@ -221,6 +222,14 @@ export function createSync({
     return running;
   }
 
+  /** « Synchroniser maintenant » : relit d'abord le classeur (récupère l'autre appareil), puis envoie le reste. */
+  async function syncNow() {
+    if (timer) cancel(timer);
+    timer = null;
+    await refresh({ force: true });
+    if (persist.read()?.dirty && ['synced', 'pending'].includes(status.phase)) await flush();
+  }
+
   /** À appeler après chaque modification locale. */
   function pushSoon() {
     const saved = persist.read();
@@ -239,5 +248,5 @@ export function createSync({
     set({ phase: 'off', email: '', fileId: '', message: '', syncedAt: null });
   }
 
-  return { connect, resume, refresh, pushSoon, flush, disconnect, getStatus: () => status };
+  return { connect, resume, refresh, syncNow, pushSoon, flush, disconnect, getStatus: () => status };
 }

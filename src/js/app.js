@@ -516,6 +516,8 @@ function googleInner() {
     <div class="google-box">
       <div class="google-line"><span class="sync-dot sync-${st.phase}"></span><div><b>${esc(st.email || 'Compte Google')}</b><div class="muted" style="font-size:14px">${esc(label)}</div></div></div>
       ${st.message && st.phase !== 'offline' ? `<p class="error">${esc(st.message)}</p>` : ''}
+      ${st.fileCount > 1 ? `<p class="notice">${st.fileCount} classeurs « ${esc(FILE_NAME)} » existent dans votre Drive : l'application utilise le plus ancien. Supprimez les autres pour éviter toute confusion.</p>` : ''}
+      <p class="muted" style="font-size:12px;margin-top:8px">Classeur …${esc(String(st.fileId).slice(-6))}${st.checkedAt ? ` · dernière lecture ${new Date(st.checkedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''} · ${esc(location.host)}</p>
       ${st.ignored ? `<p class="notice">${st.ignored} ligne${st.ignored > 1 ? 's' : ''} du classeur ${st.ignored > 1 ? 'ont été ignorées' : 'a été ignorée'} (date, montant ou catégorie invalide).</p>` : ''}
     </div>
     <div class="row">
@@ -674,7 +676,7 @@ const actions = {
   },
   'google-connect': () => sync.connect(),
   'google-reconnect': () => sync.resume({ silent: false }),
-  'google-sync': () => sync.flush(),
+  'google-sync': () => sync.syncNow(),
   'google-disconnect': () => {
     if (!confirm('Se déconnecter de Google ? Vos données restent sur cet appareil et dans le classeur du Drive.')) return;
     sync.disconnect();

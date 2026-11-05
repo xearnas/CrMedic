@@ -69,7 +69,7 @@ const mk = (srv) => createDrive({ fetchFn: srv.fetchFn, getToken: async () => 't
 test('fichier absent : il est créé, vide, avec tous les onglets', async () => {
   const srv = fakeGoogle();
   const res = await mk(srv).getOrCreate();
-  assert.deepEqual(res, { id: 'book1', created: true });
+  assert.deepEqual(res, { id: 'book1', created: true, count: 1 });
   assert.deepEqual([...srv.book.tabs.keys()], Object.values(TABS));
   assert.deepEqual(srv.book.tabs.get('CA').values, emptyTables()['CA']);
 });
@@ -77,7 +77,7 @@ test('fichier absent : il est créé, vide, avec tous les onglets', async () => 
 test('fichier présent : il est retrouvé par son nom, sans création', async () => {
   const srv = fakeGoogle({ files: [{ id: 'abc', name: FILE_NAME }, { id: 'zzz', name: FILE_NAME }] });
   const res = await mk(srv).getOrCreate();
-  assert.deepEqual(res, { id: 'abc', created: false });
+  assert.deepEqual(res, { id: 'abc', created: false, count: 2 });
   assert.ok(!srv.calls.some((c) => c.startsWith('POST')));
 });
 

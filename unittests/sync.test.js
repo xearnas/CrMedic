@@ -251,3 +251,13 @@ test('refresh : sans changement distant, rien n’est remplacé ; envoi en atten
   await env.sync.refresh();
   assert.equal(reads, 0);
 });
+
+test('syncNow : relit le classeur avant d’envoyer (ne masque pas ce qu’un autre appareil a écrit)', async () => {
+  const env = setup({ local: setRevenue(emptyState(), '2026-10-01', 100, 2) });
+  await env.sync.connect();
+  const other = addExpense(env.state, { date: '2026-10-05', amount: 42.5, category: 'Loyer' }).state;
+  env.tables = stateToTables(other, new Date(2026, 9, 6));
+  await env.sync.syncNow();
+  assert.equal(env.state.expenses.length, 1);
+  assert.equal(env.tables['Frais'].length, 2); // le frais distant est toujours dans le classeur
+});

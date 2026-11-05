@@ -53,11 +53,15 @@ export function createDrive({ fetchFn, getToken }) {
   }
 
   /** Le plus ancien fichier portant le nom fixe, parmi ceux que l'application a créés. */
-  async function findFile() {
+  async function findFiles() {
     const name = FILE_NAME.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const q = `name='${name}' and mimeType='${MIME_SHEET}' and trashed=false`;
     const data = await api(`${DRIVE}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent('files(id,name,createdTime)')}&orderBy=createdTime&pageSize=10`);
-    return data.files?.[0] ?? null;
+    return data.files ?? [];
+  }
+
+  async function findFile() {
+    return (await findFiles())[0] ?? null;
   }
 
   async function createFile() {
@@ -87,10 +91,10 @@ export function createDrive({ fetchFn, getToken }) {
 
   /** Retrouve le classeur ; le crée (vide) s'il n'existe pas. */
   async function getOrCreate() {
-    const found = await findFile();
-    if (found) return { id: found.id, created: false };
+    const all = await findFiles();
+    if (all[0]) return { id: all[0].id, created: false, count: all.length };
     const made = await createFile();
-    return { id: made.id, created: true };
+    return { id: made.id, created: true, count: 1 };
   }
 
   /** Vérifie les onglets (crée ceux qui manquent) et agrandit la grille si besoin. */
@@ -135,5 +139,5 @@ export function createDrive({ fetchFn, getToken }) {
     return tables[TABS.meta].find((r) => r[0] === 'maj')[1];
   }
 
-  return { findFile, createFile, getOrCreate, readTables, writeTables, saveState };
+  return { findFile, findFiles, createFile, getOrCreate, readTables, writeTables, saveState };
 }
