@@ -825,4 +825,16 @@ document.body.insertAdjacentHTML('beforeend', `
   <input type="file" id="in-import" accept="application/json,.json" hidden>`);
 window.addEventListener('hashchange', render);
 render();
-if (auth.isConfigured()) sync.resume();
+if (auth.isConfigured()) {
+  sync.resume();
+  // Récupère ce qu'un autre appareil a envoyé : au retour sur l'onglet, puis toutes les 2 minutes.
+  let lastRefresh = Date.now();
+  const refresh = () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastRefresh < 15000) return;
+    lastRefresh = Date.now();
+    sync.refresh();
+  };
+  document.addEventListener('visibilitychange', refresh);
+  window.addEventListener('focus', refresh);
+  setInterval(() => { lastRefresh = 0; refresh(); }, 120000);
+}

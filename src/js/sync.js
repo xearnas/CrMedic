@@ -64,6 +64,7 @@ export function createSync({
   let timer = null;
   let running = null;
   let again = false;
+  let refreshing = false;
 
   const set = (patch) => {
     status = { ...status, ...patch };
@@ -163,6 +164,37 @@ export function createSync({
     }
   }
 
+  /**
+   * Relit le classeur en cours de session (retour sur l'onglet, minuteur) : récupère ce qu'un autre appareil
+   * a envoyé. Ne fait rien si une session n'est pas active ou si un envoi est en cours / en attente.
+   */
+  async function refresh() {
+    const saved = persist.read();
+    const { phase } = status;
+    if (!saved?.fileId || running || refreshing || timer) return;
+    if (!['synced', 'offline', 'error'].includes(phase)) return;
+    refreshing = true;
+    const base = getState();
+    try {
+      const id = saved.fileId;
+      const tables = await drive.readTables(id);
+      tablesToState(tables, getState());
+      const cur = persist.read() ?? saved;
+      const action = resumeAction({ dirty: Boolean(cur.dirty), remoteMaj: majOf(tables), lastMaj: cur.lastMaj });
+      if (action === 'pull') return pullState(id, tables, base);
+      if (action === 'ask') {
+        const choice = await askConflict();
+        if (choice === 'pull') return pullState(id, tables, base);
+        if (choice === 'push') return await pushState(id);
+      }
+      if (phase !== 'synced') set({ phase: 'synced', message: '' });
+    } catch (e) {
+      fail(e);
+    } finally {
+      refreshing = false;
+    }
+  }
+
   async function flush() {
     timer = null;
     const saved = persist.read();
@@ -207,5 +239,5 @@ export function createSync({
     set({ phase: 'off', email: '', fileId: '', message: '', syncedAt: null });
   }
 
-  return { connect, resume, pushSoon, flush, disconnect, getStatus: () => status };
+  return { connect, resume, refresh, pushSoon, flush, disconnect, getStatus: () => status };
 }

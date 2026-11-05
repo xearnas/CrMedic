@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createSync, mergeLocalEdits, resumeAction } from '../src/js/sync.js';
 import { DriveError, emptyTables } from '../src/js/drive.js';
 import { stateToTables } from '../src/js/sheetmodel.js';
-import { emptyState, sampleState, setRevenue, updateProfile } from '../src/js/store.js';
+import { addExpense, emptyState, sampleState, setRevenue, updateProfile } from '../src/js/store.js';
 
 const NOW = new Date(2026, 9, 29, 10, 0, 0);
 
@@ -221,4 +221,33 @@ test('reconnexion par clic : fenêtre Google (non silencieuse), session et donn�
   assert.deepEqual(env.signIns, [{ silent: false }]);
   assert.equal(env.sync.getStatus().phase, 'synced');
   assert.equal(env.state.revenues['2026-10-01'].amount, 100);
+});
+
+test('refresh : un frais ajouté depuis un autre appareil apparaît sans recharger la page', async () => {
+  const local = setRevenue(emptyState(), '2026-10-01', 100, 2);
+  const env = setup({ local, saved: { email: 'x', fileId: 'book1', lastMaj: '2026-10-01T00:00:00.000Z', dirty: false } });
+  env.sync.getStatus().phase; // 'off' : rien à faire
+  await env.sync.refresh();
+  assert.equal(env.state, local);
+  await env.sync.connect(); // session active, phase « synced »
+  const lastMaj = env.saved.lastMaj;
+  const other = addExpense(env.state, { date: '2026-10-05', amount: 42.5, category: 'Loyer', note: 'tel' }).state;
+  env.tables = stateToTables(other, new Date(2026, 9, 6)); // l'autre appareil a écrit
+  await env.sync.refresh();
+  assert.equal(env.state.expenses.length, 1);
+  assert.equal(env.state.expenses[0].amount, 42.5);
+  assert.notEqual(env.saved.lastMaj, lastMaj);
+});
+
+test('refresh : sans changement distant, rien n’est remplacé ; envoi en attente : pas de lecture', async () => {
+  const env = setup({ local: setRevenue(emptyState(), '2026-10-01', 100, 2) });
+  await env.sync.connect();
+  const keep = env.state;
+  await env.sync.refresh();
+  assert.equal(env.state, keep);
+  env.sync.pushSoon(); // modification locale en attente
+  let reads = 0;
+  env.onRead = () => { reads += 1; };
+  await env.sync.refresh();
+  assert.equal(reads, 0);
 });
