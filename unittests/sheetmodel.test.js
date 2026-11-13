@@ -31,18 +31,52 @@ test('aller-retour état -> tables -> état (données d’exemple)', () => {
   assert.equal(back.profile.name, state.profile.name);
 });
 
-test('la photo de profil et les images de justificatifs restent locales', () => {
+test('la photo de profil et les images en attente restent locales ; les photos du Drive sont dans le classeur', () => {
   let s = updateProfile(emptyState(), { photo: 'data:image/jpeg;base64,AAAA' });
-  const withDoc = addExpense(s, { date: '2026-10-02', amount: 12.5, category: 'Autre', doc: { name: 'ticket.jpg', size: 10, type: 'image/jpeg', dataUrl: 'data:x' } });
-  s = withDoc.state;
+  s = addExpense(s, { date: '2026-10-02', amount: 12.5, category: 'Autre', docs: [
+    { id: 'p1', name: 'ticket.jpg', size: 10, type: 'image/jpeg', dataUrl: 'data:x' },
+    { id: 'p2', name: 'facture.jpg', size: 20, type: 'image/jpeg', driveId: 'DRV2' },
+  ] }).state;
   const tables = stateToTables(s, NOW);
   assert.ok(!JSON.stringify(tables).includes('data:'), 'aucune donnée image dans le classeur');
-  assert.equal(tables[TABS.frais][1][5], 'ticket.jpg');
+  assert.equal(tables[TABS.frais][1][5], 'ticket.jpg ; facture.jpg');
+  assert.deepEqual(tables[TABS.docs].slice(1), [[s.expenses[0].id, 'DRV2', 'facture.jpg', 'image/jpeg']]);
   const { state: back } = tablesToState(tables, s);
   assert.equal(back.profile.photo, s.profile.photo);
-  assert.equal(back.expenses[0].doc.dataUrl, 'data:x');
-  const { state: fromScratch } = tablesToState(tables, null);
-  assert.deepEqual(fromScratch.expenses[0].doc, { name: 'ticket.jpg' });
+  assert.equal(back.expenses[0].docs.find((d) => !d.driveId).dataUrl, 'data:x'); // en attente : conservée
+  assert.equal(back.expenses[0].docs.find((d) => d.driveId).driveId, 'DRV2');
+  const { state: other } = tablesToState(tables, null); // autre appareil : ne voit que ce qui est dans le Drive
+  assert.deepEqual(other.expenses[0].docs.map((d) => d.driveId), ['DRV2']);
+});
+
+test('une photo supprimée depuis un autre appareil disparaît ici aussi', () => {
+  let s = addExpense(emptyState(), { date: '2026-10-02', amount: 12.5, category: 'Autre', docs: [{ name: 'a.jpg', driveId: 'D1' }] }).state;
+  const tables = stateToTables(s, NOW);
+  tables[TABS.docs] = [HEADERS[TABS.docs]];
+  assert.deepEqual(tablesToState(tables, s).state.expenses[0].docs, []);
+});
+
+test('sans justificatif et récurrence font l’aller-retour', () => {
+  let s = addExpense(emptyState(), { date: '2026-10-02', amount: 300, category: 'Autre', note: 'Crédit voiture', noDoc: true, recur: { every: 'month', end: '2027-10-02' } }).state;
+  s = addExpense(s, { date: '2026-10-03', amount: 20, category: 'Autre', recur: { every: 'week', end: '' } }).state;
+  const tables = stateToTables(s, NOW);
+  assert.deepEqual(tables[TABS.frais][1].slice(6), ['oui', 'mois', '2027-10-02']);
+  assert.deepEqual(tables[TABS.frais][2].slice(6), ['', 'semaine', '']);
+  const { state: back } = tablesToState(tables, null);
+  const byDate = Object.fromEntries(back.expenses.map((e) => [e.date, e]));
+  assert.equal(byDate['2026-10-02'].noDoc, true);
+  assert.deepEqual(byDate['2026-10-02'].recur, { every: 'month', end: '2027-10-02' });
+  assert.deepEqual(byDate['2026-10-03'].recur, { every: 'week', end: '' });
+});
+
+test('un classeur créé avant ces colonnes (en-tête de 6 colonnes) reste lisible', () => {
+  const t = stateToTables(addExpense(emptyState(), { date: '2026-10-02', amount: 12.5, category: 'Autre' }).state, NOW);
+  t[TABS.frais] = t[TABS.frais].map((r) => r.slice(0, 6));
+  delete t[TABS.docs];
+  const { state, ignored } = tablesToState(t, null);
+  assert.equal(ignored, 0);
+  assert.equal(state.expenses.length, 1);
+  assert.equal(state.expenses[0].recur, null);
 });
 
 test('des en-têtes modifiés lèvent une erreur explicite', () => {

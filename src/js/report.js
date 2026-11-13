@@ -9,6 +9,17 @@
 //   kind 'title' | 'sub' | 'head' | 'total' | 'note'
 import { MONTHS_FR, WEEKDAYS_FR, daysInMonth, toISO } from './format.js';
 import { categoryTotals, monthRange, periodStats } from './stats.js';
+import { expandExpenses } from './store.js';
+
+const RECUR_LABEL = { week: 'hebdomadaire', month: 'mensuel', year: 'annuel' };
+
+/** Colonne « Justificatif » : nom du fichier, nombre de pièces, ou mention explicite. */
+function proofLabel(e) {
+  if (e.docs?.length) return e.docs.length === 1 ? e.docs[0].name : `${e.docs.length} justificatifs`;
+  return e.noDoc ? 'Sans justificatif' : 'Non';
+}
+
+const noteOf = (e) => [e.note, e.recurring ? `(${RECUR_LABEL[e.recur.every]})` : ''].filter(Boolean).join(' ');
 
 export const SHEET_SUMMARY = 'Synthèse';
 export const SHEET_CA = 'CA';
@@ -51,7 +62,7 @@ export function buildReport(state, period) {
   const revenues = Object.entries(state.revenues)
     .filter(([iso]) => iso >= range.from && iso <= range.to)
     .sort(([a], [b]) => (a < b ? -1 : 1));
-  const expenses = state.expenses
+  const expenses = expandExpenses(state)
     .filter((e) => e.date >= range.from && e.date <= range.to)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
 
@@ -88,7 +99,7 @@ export function buildReport(state, period) {
     head(['Date', 'Catégorie', 'Note', 'Justificatif', 'Montant TTC (€)']),
   ];
   if (expenses.length) {
-    for (const e of expenses) exRows.push([c(e.date, 'date'), c(e.category), c(e.note || ''), c(e.doc?.name ?? 'Non'), c(e.amount, 'money')]);
+    for (const e of expenses) exRows.push([c(e.date, 'date'), c(e.category), c(noteOf(e)), c(proofLabel(e)), c(e.amount, 'money')]);
   } else {
     exRows.push([c('Aucun frais sur la période', 'text', { kind: 'note' })]);
   }

@@ -1,7 +1,7 @@
 // Correspondance (pure) entre l'état de l'application et les onglets du classeur Google Sheets.
 // Le classeur sert de base de données : une ligne par opération, colonnes fixes, valeurs « brutes »
 // (dates ISO en texte, montants en nombres). La mise en forme pour le comptable est faite par l'export.
-import { ACCENTS, normalize } from './store.js';
+import { ACCENTS, normalize, newId } from './store.js';
 import { isValidISO, parseAmount } from './format.js';
 
 /** Nom du fichier dans le Drive de l'utilisateur. Ne pas le renommer : l'application le retrouve par ce nom. */
@@ -13,16 +13,23 @@ export const TABS = {
   frais: 'Frais',
   categories: 'Catégories',
   profil: 'Profil',
+  docs: 'Justificatifs',
   meta: '_meta',
 };
 
 export const HEADERS = {
   [TABS.ca]: ['Date', 'Montant (€)', 'Consultations'],
-  [TABS.frais]: ['ID', 'Date', 'Montant TTC (€)', 'Catégorie', 'Note', 'Justificatif'],
+  [TABS.frais]: ['ID', 'Date', 'Montant TTC (€)', 'Catégorie', 'Note', 'Justificatif', 'Sans justificatif', 'Récurrence', 'Fin de récurrence'],
   [TABS.categories]: ['Catégorie'],
   [TABS.profil]: ['Clé', 'Valeur'],
+  [TABS.docs]: ['ID frais', 'ID fichier Drive', 'Nom', 'Type'],
   [TABS.meta]: ['Clé', 'Valeur'],
 };
+
+/** Colonnes obligatoires de l'en-tête : les classeurs créés avant les colonnes ajoutées restent lisibles. */
+const REQUIRED_COLS = { [TABS.frais]: 6 };
+const RECUR_TO_SHEET = { week: 'semaine', month: 'mois', year: 'an' };
+const RECUR_FROM_SHEET = { semaine: 'week', mois: 'month', an: 'year' };
 
 const PROFILE_KEYS = ['name', 'cabinet', 'email', 'rpps', 'accent'];
 
@@ -35,10 +42,16 @@ export function stateToTables(state, now = new Date()) {
     .map(([date, r]) => [date, r.amount, r.count ?? '']);
   const frais = [...state.expenses]
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1))
-    .map((e) => [e.id, e.date, e.amount, e.category, e.note ?? '', e.doc?.name ?? '']);
+    .map((e) => [
+      e.id, e.date, e.amount, e.category, e.note ?? '', (e.docs ?? []).map((d) => d.name).join(' ; '),
+      e.noDoc ? 'oui' : '', e.recur ? RECUR_TO_SHEET[e.recur.every] : '', e.recur?.end ?? '',
+    ]);
+  // Une ligne par photo déjà envoyée dans le Drive (les images en attente d'envoi restent sur l'appareil).
+  const justificatifs = state.expenses.flatMap((e) => (e.docs ?? []).filter((d) => d.driveId).map((d) => [e.id, d.driveId, d.name, d.type ?? '']));
   return {
     [TABS.ca]: [HEADERS[TABS.ca], ...ca],
     [TABS.frais]: [HEADERS[TABS.frais], ...frais],
+    [TABS.docs]: [HEADERS[TABS.docs], ...justificatifs],
     [TABS.categories]: [HEADERS[TABS.categories], ...state.categories.map((c) => [c])],
     [TABS.profil]: [HEADERS[TABS.profil], ...PROFILE_KEYS.map((k) => [k, state.profile[k] ?? ''])],
     [TABS.meta]: [HEADERS[TABS.meta], ['schema', SCHEMA_VERSION], ['application', 'CrMedic'], ['maj', now.toISOString()]],
@@ -51,13 +64,14 @@ export function tablesAreEmpty(tables) {
 }
 
 const cell = (v) => (v === undefined || v === null ? '' : v);
-const sameHeader = (row, expected) => expected.every((h, i) => String(cell(row?.[i])).trim() === h);
+const sameHeader = (row, expected, required = expected.length) =>
+  expected.every((h, i) => String(cell(row?.[i])).trim() === h || (i >= required && String(cell(row?.[i])).trim() === ''));
 
 /** Une table lue du classeur peut manquer de l'onglet (créé vide) : seules des en-têtes modifiées sont une erreur. */
 function checkHeader(tables, tab) {
   const rows = tables[tab];
   if (!rows || rows.length === 0) return [];
-  if (!sameHeader(rows[0], HEADERS[tab])) {
+  if (!sameHeader(rows[0], HEADERS[tab], REQUIRED_COLS[tab])) {
     throw new SheetFormatError(`L'onglet « ${tab} » a été modifié : les en-têtes de colonnes ne correspondent plus (attendu : ${HEADERS[tab].join(' | ')}).`);
   }
   return rows.slice(1).filter((r) => r.some((c) => String(cell(c)).trim() !== ''));
@@ -88,6 +102,7 @@ export function tablesToState(tables, base = null) {
   const fraisRows = checkHeader(tables, TABS.frais);
   const catRows = checkHeader(tables, TABS.categories);
   const profRows = checkHeader(tables, TABS.profil);
+  const docRows = checkHeader(tables, TABS.docs);
   let ignored = 0;
 
   const revenues = {};
@@ -99,7 +114,17 @@ export function tablesToState(tables, base = null) {
     else ignored += 1;
   }
 
-  const localDocs = new Map((base?.expenses ?? []).map((e) => [e.id, e.doc]));
+  // Justificatifs : ceux du Drive font foi ; les images pas encore envoyées (et les PDF) ne vivent que sur l'appareil.
+  const remoteDocs = new Map();
+  for (const r of docRows) {
+    const expenseId = String(cell(r[0])).trim();
+    const driveId = String(cell(r[1])).trim();
+    if (!expenseId || !driveId) continue;
+    const list = remoteDocs.get(expenseId) ?? [];
+    list.push({ id: driveId, driveId, name: String(cell(r[2])) || 'justificatif.jpg', type: String(cell(r[3])), size: 0 });
+    remoteDocs.set(expenseId, list);
+  }
+  const localExpenses = new Map((base?.expenses ?? []).map((e) => [e.id, e]));
   const expenses = [];
   for (const r of fraisRows) {
     const date = isoOf(r[1]);
@@ -109,16 +134,24 @@ export function tablesToState(tables, base = null) {
       ignored += 1;
       continue;
     }
-    const id = String(cell(r[0])).trim();
-    const docName = String(cell(r[5])).trim();
-    const local = id ? localDocs.get(id) : null;
+    const id = String(cell(r[0])).trim() || newId();
+    const local = localExpenses.get(id);
+    const known = new Map((local?.docs ?? []).filter((d) => d.driveId).map((d) => [d.driveId, d]));
+    const docs = [
+      ...(remoteDocs.get(id) ?? []).map((d) => ({ ...d, ...(known.get(d.driveId) ?? {}) })),
+      ...(local?.docs ?? []).filter((d) => !d.driveId),
+    ];
+    const recurKey = String(cell(r[7])).trim().toLowerCase();
+    const endCell = String(cell(r[8])).trim();
     expenses.push({
       id,
       date,
       amount,
       category,
       note: String(cell(r[4])),
-      doc: local && local.name === docName ? local : docName ? { name: docName } : null,
+      docs,
+      noDoc: String(cell(r[6])).trim().toLowerCase() === 'oui',
+      recur: RECUR_FROM_SHEET[recurKey] ? { every: RECUR_FROM_SHEET[recurKey], end: isoOf(endCell) ?? '' } : null,
     });
   }
 

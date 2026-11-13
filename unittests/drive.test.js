@@ -1,25 +1,44 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDrive, DriveError, emptyTables } from '../src/js/drive.js';
+import { FOLDER_NAME, createDrive, dataUrlToBlob, DriveError, emptyTables } from '../src/js/drive.js';
 import { FILE_NAME, TABS, stateToTables, tablesToState } from '../src/js/sheetmodel.js';
 import { sampleState } from '../src/js/store.js';
 
 /** Faux serveur Google : un seul classeur en mémoire, avec la grille de chaque onglet. */
 function fakeGoogle({ files = [], failWith = null, failMessage = 'boom' } = {}) {
-  const srv = { files: [...files], book: null, calls: [] };
+  const srv = { files: [...files], book: null, calls: [], uploads: [], deleted: [], folder: null };
   const json = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
   srv.fetchFn = async (url, init = {}) => {
     const method = init.method ?? 'GET';
-    const body = init.body ? JSON.parse(init.body) : null;
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : null;
     srv.calls.push(`${method} ${url.replace(/\?.*/, '')}`);
     assert.equal(init.headers.Authorization, 'Bearer tok');
     if (failWith) return json({ error: { message: failMessage } }, failWith);
     const u = new URL(url);
-    if (u.pathname === '/drive/v3/files') {
+    if (u.pathname === '/drive/v3/files' && method === 'GET') {
       const q = u.searchParams.get('q');
-      assert.ok(q.includes(`name='${FILE_NAME}'`) && q.includes('trashed=false'));
+      assert.ok(q.includes('trashed=false'));
+      if (q.includes(FOLDER_NAME)) return json({ files: srv.folder ? [{ id: srv.folder }] : [] });
+      assert.ok(q.includes(`name='${FILE_NAME}'`));
       return json({ files: srv.files });
     }
+    if (u.pathname === '/drive/v3/files' && method === 'POST') {
+      srv.folder = 'folder1';
+      srv.folderBody = body;
+      return json({ id: 'folder1' });
+    }
+    if (u.pathname === '/upload/drive/v3/files' && method === 'POST') {
+      assert.match(init.headers['Content-Type'], /^multipart\/related; boundary=/);
+      if (srv.failUploadOnce) { srv.failUploadOnce = false; srv.folder = null; return json({ error: { message: 'File not found: folder1' } }, 404); }
+      const text = await new Response(init.body).text();
+      srv.uploads.push(text);
+      return json({ id: `img${srv.uploads.length}` });
+    }
+    const media = u.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/);
+    if (media && method === 'GET' && u.searchParams.get('alt') === 'media') {
+      return { ok: true, status: 200, blob: async () => new Blob(['JPEGDATA'], { type: 'image/jpeg' }) };
+    }
+    if (media && method === 'DELETE') { srv.deleted.push(media[1]); return { ok: true, status: 204 }; }
     if (u.pathname === '/v4/spreadsheets' && method === 'POST') {
       srv.book = { id: 'book1', tabs: new Map(body.sheets.map((s) => [s.properties.title, { rows: 1000, values: [] }])) };
       srv.files.push({ id: 'book1', name: FILE_NAME });
@@ -121,4 +140,41 @@ test('les erreurs Google deviennent des DriveError lisibles', async () => {
   await assert.rejects(mk(noScope).getOrCreate(), (e) => e.status === 403 && /cochez la case/.test(e.message));
   const offline = createDrive({ fetchFn: async () => { throw new TypeError('fetch failed'); }, getToken: async () => 'tok' });
   await assert.rejects(offline.getOrCreate(), (e) => e.status === 0 && /Réseau/.test(e.message));
+});
+
+const DATA_URL = 'data:image/jpeg;base64,' + Buffer.from('JPEGDATA').toString('base64');
+
+test('dataUrlToBlob décode une image', async () => {
+  const blob = dataUrlToBlob(DATA_URL);
+  assert.equal(blob.type, 'image/jpeg');
+  assert.equal(await blob.text(), 'JPEGDATA');
+});
+
+test('photo : le dossier est créé une fois, l’image est envoyée dedans', async () => {
+  const srv = fakeGoogle();
+  const drive = mk(srv);
+  const id1 = await drive.uploadImage({ name: 'ticket.jpg', dataUrl: DATA_URL });
+  const id2 = await drive.uploadImage({ name: 'facture.jpg', dataUrl: DATA_URL });
+  assert.deepEqual([id1, id2], ['img1', 'img2']);
+  assert.deepEqual(srv.folderBody, { name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' });
+  assert.equal(srv.calls.filter((c) => c === 'POST https://www.googleapis.com/drive/v3/files').length, 1);
+  assert.match(srv.uploads[0], /"name":"ticket\.jpg"/);
+  assert.match(srv.uploads[0], /"parents":\["folder1"\]/);
+  assert.match(srv.uploads[0], /JPEGDATA/);
+});
+
+test('photo : dossier supprimé entre-temps -> recréé, envoi rejoué', async () => {
+  const srv = fakeGoogle();
+  const drive = mk(srv);
+  await drive.uploadImage({ name: 'a.jpg', dataUrl: DATA_URL });
+  srv.failUploadOnce = true;
+  assert.equal(await drive.uploadImage({ name: 'b.jpg', dataUrl: DATA_URL }), 'img2');
+});
+
+test('photo : téléchargement et suppression', async () => {
+  const srv = fakeGoogle();
+  const drive = mk(srv);
+  assert.equal(await (await drive.downloadImage('img1')).text(), 'JPEGDATA');
+  await drive.deleteFile('img1');
+  assert.deepEqual(srv.deleted, ['img1']);
 });

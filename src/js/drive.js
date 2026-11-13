@@ -6,9 +6,13 @@ import { FILE_NAME, HEADERS, TABS, stateToTables } from './sheetmodel.js';
 
 const DRIVE = 'https://www.googleapis.com/drive/v3';
 const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
+const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const MIME_SHEET = 'application/vnd.google-apps.spreadsheet';
+const MIME_FOLDER = 'application/vnd.google-apps.folder';
+/** Dossier du Drive qui reçoit les photos de justificatifs. */
+export const FOLDER_NAME = 'CrMedic - Justificatifs';
 const TAB_NAMES = Object.values(TABS);
-const LAST_COL = 'H';
+const LAST_COL = 'J';
 
 export class DriveError extends Error {
   constructor(message, status = 0) {
@@ -22,21 +26,30 @@ export function emptyTables() {
   return Object.fromEntries(Object.entries(HEADERS).map(([tab, header]) => [tab, [header]]));
 }
 
+/** Convertit une data URL (« data:image/jpeg;base64,… ») en Blob. */
+export function dataUrlToBlob(dataUrl) {
+  const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+  if (!m) throw new Error('Image invalide.');
+  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: m[1] || 'application/octet-stream' });
+}
+
 export const fileUrl = (id) => `https://docs.google.com/spreadsheets/d/${id}`;
 const quote = (tab) => `'${tab}'`;
 
 export function createDrive({ fetchFn, getToken }) {
-  async function api(url, { method = 'GET', body } = {}) {
+  async function api(url, { method = 'GET', body, rawBody, contentType, blob = false } = {}) {
     const token = await getToken();
     let res;
     try {
       res = await fetchFn(url, {
         method,
-        headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
+        headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(rawBody ? { 'Content-Type': contentType } : {}) },
+        body: rawBody ?? (body ? JSON.stringify(body) : undefined),
       });
-    } catch {
-      throw new DriveError('Réseau indisponible.', 0);
+    } catch (cause) {
+      throw Object.assign(new DriveError('Réseau indisponible.', 0), { cause });
     }
     if (!res.ok) {
       let detail = '';
@@ -49,6 +62,7 @@ export function createDrive({ fetchFn, getToken }) {
         : res.status === 401 ? 'Connexion Google expirée.' : res.status === 403 ? `Accès refusé par Google. ${detail}`.trim() : `Erreur Google (${res.status}). ${detail}`.trim();
       throw new DriveError(msg, res.status);
     }
+    if (blob) return res.blob();
     return res.status === 204 ? null : res.json();
   }
 
@@ -139,5 +153,39 @@ export function createDrive({ fetchFn, getToken }) {
     return tables[TABS.meta].find((r) => r[0] === 'maj')[1];
   }
 
-  return { findFile, findFiles, createFile, getOrCreate, readTables, writeTables, saveState };
+  // --- Photos de justificatifs ---------------------------------------------
+
+  let folderId = null;
+
+  /** Dossier des justificatifs : retrouvé par son nom, créé s'il n'existe pas. */
+  async function ensureFolder() {
+    if (folderId) return folderId;
+    const q = `name='${FOLDER_NAME}' and mimeType='${MIME_FOLDER}' and trashed=false`;
+    const data = await api(`${DRIVE}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent('files(id)')}&orderBy=createdTime&pageSize=1`);
+    folderId = data.files?.[0]?.id ?? (await api(`${DRIVE}/files?fields=id`, { method: 'POST', body: { name: FOLDER_NAME, mimeType: MIME_FOLDER } })).id;
+    return folderId;
+  }
+
+  /** Envoie une image (data URL) dans le dossier des justificatifs ; renvoie l'identifiant du fichier Drive. */
+  async function uploadImage({ name, dataUrl }) {
+    const media = dataUrlToBlob(dataUrl);
+    const send = async () => {
+      const boundary = `crmedic${Math.random().toString(36).slice(2)}`;
+      const meta = JSON.stringify({ name, parents: [await ensureFolder()] });
+      const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${media.type}\r\n\r\n`, media, `\r\n--${boundary}--`]);
+      return api(`${UPLOAD}?uploadType=multipart&fields=id`, { method: 'POST', rawBody: body, contentType: `multipart/related; boundary=${boundary}` });
+    };
+    try {
+      return (await send()).id;
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      folderId = null; // dossier supprimé depuis : on le recrée une fois
+      return (await send()).id;
+    }
+  }
+
+  const downloadImage = (id) => api(`${DRIVE}/files/${encodeURIComponent(id)}?alt=media`, { blob: true });
+  const deleteFile = (id) => api(`${DRIVE}/files/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+  return { findFile, findFiles, createFile, uploadImage, downloadImage, deleteFile, ensureFolder, getOrCreate, readTables, writeTables, saveState };
 }

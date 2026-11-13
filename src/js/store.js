@@ -19,8 +19,27 @@ export function emptyState() {
     profile: { name: 'Dr [Nom]', cabinet: 'Cabinet médical', email: '', rpps: '', accent: ACCENTS[0].hex, photo: '' },
     categories: [...DEFAULT_CATEGORIES],
     revenues: {}, // { 'YYYY-MM-DD': { amount, count } }
-    expenses: [], // [{ id, date, amount, category, note, doc }]
+    // [{ id, date, amount, category, note, docs: [{ id, name, type, size, driveId?, dataUrl? }], noDoc, recur }]
+    // recur : null, ou { every: 'week' | 'month' | 'year', end: 'YYYY-MM-DD' | '' } — `date` est alors la date de début.
+    expenses: [],
   };
+}
+
+export const EVERY = { week: 'Chaque semaine', month: 'Chaque mois', year: 'Chaque année' };
+
+/** Justificatif : une image (envoyée dans le Drive : `driveId`, ou en attente d'envoi : `dataUrl`) ou un nom de PDF. */
+export function normalizeDoc(d) {
+  if (!d || typeof d !== 'object' || typeof d.name !== 'string' || !d.name) return null;
+  const doc = { id: typeof d.id === 'string' && d.id ? d.id : newId(), name: d.name, type: typeof d.type === 'string' ? d.type : '', size: isNum(d.size) ? d.size : 0 };
+  if (typeof d.driveId === 'string' && d.driveId) doc.driveId = d.driveId;
+  if (typeof d.dataUrl === 'string' && d.dataUrl) doc.dataUrl = d.dataUrl;
+  return doc;
+}
+
+export function normalizeRecur(r, start) {
+  if (!r || typeof r !== 'object' || !(r.every in EVERY)) return null;
+  const end = typeof r.end === 'string' && isValidISO(r.end) && r.end >= start ? r.end : '';
+  return { every: r.every, end };
 }
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -59,10 +78,18 @@ export function normalize(raw) {
         amount: e.amount,
         category: e.category,
         note: typeof e.note === 'string' ? e.note : '',
-        doc: e.doc && typeof e.doc.name === 'string' ? e.doc : null,
+        ...normalizeProof(e),
+        recur: normalizeRecur(e.recur, e.date),
       }));
   }
   return base;
+}
+
+/** `docs` (ou l'ancien champ `doc`) et `noDoc` : une dépense « sans justificatif » n'a pas de photo. */
+function normalizeProof(e) {
+  const list = Array.isArray(e.docs) ? e.docs : e.doc ? [e.doc] : [];
+  const docs = list.map(normalizeDoc).filter(Boolean);
+  return { docs, noDoc: docs.length === 0 && e.noDoc === true };
 }
 
 let counter = 0;
@@ -84,12 +111,75 @@ export function removeRevenue(state, iso) {
   return { ...state, revenues: rest };
 }
 
-export function addExpense(state, { date, amount, category, note = '', doc = null }) {
+function checkExpense({ date, amount, category, recur }) {
   if (!isValidISO(date)) throw new ValidationError('Date du frais invalide.');
   if (!isNum(amount) || amount <= 0) throw new ValidationError('Saisissez un montant TTC supérieur à 0.');
   if (typeof category !== 'string' || !category.trim()) throw new ValidationError('Choisissez une catégorie.');
-  const expense = { id: newId(), date, amount, category: category.trim(), note: String(note).trim().slice(0, 200), doc };
+  if (recur) {
+    if (!(recur.every in EVERY)) throw new ValidationError('Choisissez la fréquence du frais récurrent.');
+    if (recur.end && !isValidISO(recur.end)) throw new ValidationError('Date de fin invalide.');
+    if (recur.end && recur.end < date) throw new ValidationError('La date de fin doit être postérieure à la date de début.');
+  }
+}
+
+const buildExpense = (id, { date, amount, category, note = '', docs = [], noDoc = false, recur = null }) => ({
+  id, date, amount, category: category.trim(), note: String(note).trim().slice(0, 200),
+  ...normalizeProof({ docs, noDoc }),
+  recur: recur ? { every: recur.every, end: recur.end || '' } : null,
+});
+
+export function addExpense(state, fields) {
+  checkExpense(fields);
+  const expense = buildExpense(newId(), fields);
   return { state: { ...state, expenses: [...state.expenses, expense] }, expense };
+}
+
+/** Modifie un frais existant (champs fournis uniquement). Pour un frais récurrent, vaut pour toute la série. */
+export function updateExpense(state, id, patch) {
+  const cur = state.expenses.find((e) => e.id === id);
+  if (!cur) throw new ValidationError('Frais introuvable.');
+  const next = { ...cur, ...patch };
+  checkExpense(next);
+  const expense = buildExpense(id, next);
+  return { state: { ...state, expenses: state.expenses.map((e) => (e.id === id ? expense : e)) }, expense };
+}
+
+// --- Frais récurrents ------------------------------------------------------
+
+/** k-ième échéance d'une série (le jour du mois est ramené à la fin du mois si besoin : 31 -> 30, 29 févr. -> 28). */
+function nthDate(start, every, k) {
+  const [y, m, d] = start.split('-').map(Number);
+  if (every === 'week') {
+    const t = new Date(Date.UTC(y, m - 1, d + 7 * k));
+    return toISO(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+  }
+  const months = every === 'month' ? k : 12 * k;
+  const total = y * 12 + (m - 1) + months;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  return toISO(ny, nm, Math.min(d, daysInMonth(ny, nm)));
+}
+
+/** Échéances d'un frais jusqu'à `upTo` (aujourd'hui par défaut) : une seule pour un frais ponctuel. */
+export function occurrences(e, upTo = todayISO()) {
+  if (!e.recur) return [e.date];
+  const limit = e.recur.end && e.recur.end < upTo ? e.recur.end : upTo;
+  const out = [];
+  for (let k = 0; k < 5000; k++) {
+    const d = nthDate(e.date, e.recur.every, k);
+    if (d > limit) break;
+    out.push(d);
+  }
+  return out;
+}
+
+/** Tous les frais à compter : chaque échéance échue d'un frais récurrent devient une ligne (même `id` que la série). */
+export function expandExpenses(state, upTo = todayISO()) {
+  const out = [];
+  for (const e of state.expenses) {
+    for (const date of occurrences(e, upTo)) out.push({ ...e, date, startDate: e.date, recurring: !!e.recur });
+  }
+  return out;
 }
 
 export function removeExpense(state, id) {
