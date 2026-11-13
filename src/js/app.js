@@ -95,6 +95,7 @@ const sync = createSync({
   onStatus: (st) => {
     if (st.phase === 'synced') photos.uploadSoon();
     renderChrome();
+    document.querySelectorAll('.mobile-sync').forEach((el) => { el.outerHTML = mobileSync(); });
     const sec = $('#sec-google');
     if (sec) sec.innerHTML = googleInner();
   },
@@ -174,8 +175,8 @@ function avatarHtml(cls = '', tag = 'div', attrs = '') {
 }
 
 function mobileHead(eyebrow, title) {
-  return `<div class="mobile-head"><div><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(title)}</h1></div>
-    ${avatarHtml('', 'a', 'href="#/profil" aria-label="Profil et réglages"')}</div>`;
+  return `<div class="mobile-head"><div class="mobile-title"><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(title)}</h1></div>
+    <div class="mobile-tools">${mobileSync()}${avatarHtml('', 'a', 'href="#/profil" aria-label="Profil et réglages"')}</div></div>`;
 }
 
 function applyAccent(hex) {
@@ -211,6 +212,16 @@ const SYNC_LABELS = {
   connecting: 'Connexion…', pending: 'Envoi en cours…', synced: 'Synchronisé', offline: 'Hors ligne',
   login: 'Reconnecter Google', error: 'Erreur de synchronisation',
 };
+/** Bouton de statut en haut à droite sur téléphone : un appui reconnecte, ou synchronise tout de suite. */
+const MOBILE_SYNC = { off: 'Connecter', connecting: 'Connexion…', pending: 'Envoi…', synced: 'Synchro', offline: 'Hors ligne', login: 'Reconnecter', error: 'Erreur' };
+function mobileSync() {
+  if (!auth.isConfigured()) return '';
+  const { phase } = sync.getStatus();
+  const action = { login: 'google-reconnect', off: 'google-connect', connecting: '' }[phase] ?? 'google-sync';
+  const hint = { off: 'Se connecter à Google', synced: 'Synchronisé : appuyer pour synchroniser maintenant', login: 'Session expirée : appuyer pour se reconnecter', offline: 'Hors ligne : appuyer pour réessayer', error: 'Erreur de synchronisation : appuyer pour réessayer', pending: 'Envoi en cours', connecting: 'Connexion en cours' }[phase];
+  return `<button type="button" class="sync-badge mobile-sync sync-${phase}" ${action ? `data-action="${action}"` : 'disabled'} aria-label="${esc(hint)}" title="${esc(hint)}">${svg('cloud', 16, 2)}${MOBILE_SYNC[phase]}</button>`;
+}
+
 function syncBadge() {
   const { phase } = sync.getStatus();
   if (phase === 'off') return '';

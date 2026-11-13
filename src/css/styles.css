@@ -298,6 +298,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
   .mobile-head .eyebrow { font-size: 13px; font-weight: 600; color: var(--muted); }
   .mobile-head h1 { font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
   .mobile-head .avatar { width: 44px; height: 44px; }
+  .mobile-title { min-width: 0; }
+  .mobile-tools { display: flex; align-items: center; gap: 10px; flex: none; }
+  .mobile-sync { min-height: 40px; padding: 0 12px 0 10px; font-size: 13px; }
   .page { padding: 20px 16px 24px; gap: 14px; }
   .page-head { display: none; }
   .tabbar {
@@ -403,3 +406,7 @@ body.modal-open { overflow: hidden; }
   #sheet { align-items: flex-end; }
   .sheet { width: 100%; max-height: 94vh; border-radius: 20px 20px 0 0; }
 }
+.sync-badge { border: 0; font-family: inherit; cursor: pointer; }
+.sync-badge:disabled { cursor: default; }
+.sync-badge.sync-synced { background: #E3F0E8; color: #1F5C3E; }
+.sync-badge.sync-off { background: #EEECE4; color: var(--ink-soft); }
