@@ -144,6 +144,27 @@ export function updateExpense(state, id, patch) {
   return { state: { ...state, expenses: state.expenses.map((e) => (e.id === id ? expense : e)) }, expense };
 }
 
+/** Met à jour un justificatif d'un frais (par exemple après son envoi dans le Drive). `undefined` retire un champ. */
+export function patchDoc(state, expenseId, docId, patch) {
+  return {
+    ...state,
+    expenses: state.expenses.map((e) => (e.id !== expenseId ? e : {
+      ...e,
+      docs: e.docs.map((d) => {
+        if (d.id !== docId) return d;
+        const next = { ...d, ...patch };
+        for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+        return next;
+      }),
+    })),
+  };
+}
+
+/** Photos en attente d'envoi dans le Drive : images présentes sur l'appareil, pas encore dans le classeur. */
+export function pendingDocs(state) {
+  return state.expenses.flatMap((e) => e.docs.filter((d) => d.dataUrl && !d.driveId).map((d) => ({ expenseId: e.id, doc: d })));
+}
+
 // --- Frais récurrents ------------------------------------------------------
 
 /** k-ième échéance d'une série (le jour du mois est ramené à la fin du mois si besoin : 31 -> 30, 29 févr. -> 28). */

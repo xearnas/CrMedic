@@ -10,7 +10,7 @@ HTML/CSS/JavaScript natif, **sans étape de build ni dépendance**.
 |---|---|---|
 | Chiffres (`#/`) | vue d'ensemble mois + année | bascule Octobre / Année, cartes compactes |
 | CA (`#/ca`) | calendrier + formulaire, côte à côte avec les frais | page dédiée, grand champ de saisie |
-| Frais (`#/frais`) | formulaire + justificatif + derniers frais | page dédiée, bouton « Prendre la photo » (appareil photo) |
+| Frais (`#/frais`) | formulaire (photos, récurrence) + liste cliquable des frais | page dédiée, bouton « Prendre une photo » (appareil photo) ; la fiche d'un frais s'ouvre en bas d'écran |
 | Export (`#/export`) | choix de la période + aperçu du classeur Excel + téléchargement | idem, aperçu défilant |
 | Profil (`#/profil`) | profil, couleur, catégories, compte Google, sauvegarde | idem, pleine largeur |
 
@@ -40,7 +40,7 @@ origines JavaScript autorisées de l'ID client Google.
 - Copie de travail dans le navigateur (`localStorage`) : l'application fonctionne hors ligne.
 - **Base de données Google Sheets (optionnelle)** : après connexion avec Google (Profil → Compte Google),
   les données sont enregistrées dans un classeur **« CrMedic - Données »** du Drive de l'utilisateur
-  (onglets `CA`, `Frais`, `Catégories`, `Profil`, `_meta`). Le nom est fixé dans le code
+  (onglets `CA`, `Frais`, `Catégories`, `Profil`, `Justificatifs`, `_meta`). Le nom est fixé dans le code
   (`FILE_NAME`, `src/js/sheetmodel.js`) ; s'il n'existe pas, il est créé vide. Si l'utilisateur le renomme,
   un nouveau classeur est créé : c'est de sa responsabilité.
   - scope demandé : `drive.file` uniquement (l'application ne voit que les fichiers qu'elle a créés) ;
@@ -48,17 +48,24 @@ origines JavaScript autorisées de l'ID client Google.
   - au démarrage, le classeur n'est rechargé que s'il a changé depuis la dernière synchronisation
     (autre appareil) ; si les deux côtés ont des modifications, l'utilisateur choisit ;
   - dernier écrivain gagnant : pas de fusion fine entre deux appareils modifiant en même temps ;
-  - les photos de justificatifs et la photo de profil **restent sur l'appareil** (seul le nom du fichier
-    est écrit dans le classeur) ;
+  - les photos de justificatifs sont envoyées en arrière-plan dans un dossier **« CrMedic - Justificatifs »**
+    du Drive (onglet `Justificatifs` : une ligne par photo) et se retrouvent sur tous les appareils ; tant
+    qu'une photo n'est pas envoyée (hors ligne, non connecté), elle reste sur l'appareil. Seule la photo de
+    profil reste toujours locale ;
   - ne pas modifier les en-têtes de colonnes du classeur : l'application refuse de le lire plutôt que de
     risquer d'écraser des données.
 - **Export pour le comptable** (`#/export`) : classeur `.xlsx` mis en forme (Synthèse mensuelle et par
   catégorie, détail du CA, détail des frais), généré dans le navigateur avec ExcelJS (chargé à la demande
   depuis jsDelivr). Les totaux sont de vraies formules Excel. L'aperçu à l'écran vient du même modèle.
 - Sauvegarde manuelle : **Profil → Sauvegarde des données** (export/import JSON).
-- Les photos de justificatifs sont réduites (900 px, JPEG) avant stockage local ; un PDF n'est conservé que
-  par son nom.
-- « Données d'exemple » (Profil, ou bandeau d'accueil) remplit l'application pour la découvrir
+- **Frais** : cliquer un frais (liste ou tableau de bord) ouvre sa fiche : modifier, ajouter / retirer des
+  photos (plusieurs possibles, visionneuse plein écran), marquer « sans justificatif », supprimer. Les
+  « justificatifs manquants » sont signalés dans la liste.
+- **Frais récurrents** (crédit, loyer, abonnement) : date de début, date de fin facultative, fréquence
+  (chaque semaine / mois / année). Chaque échéance échue compte dans les totaux, les catégories et l'export
+  Excel ; les échéances à venir ne sont pas comptées. Modifier ou supprimer le frais vaut pour toute la série.
+- Les photos sont réduites (900 px, JPEG) avant envoi ; un PDF n'est conservé que par son nom.
+- « Données d'exemple » (Profil) remplit l'application pour la découvrir
   (désactivé quand le compte Google est connecté, pour ne pas écraser le classeur).
 
 ### Activer la connexion Google

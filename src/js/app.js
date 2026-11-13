@@ -4,8 +4,8 @@ import {
   parseAmount, parseCount, pct, shiftMonth, shortDate, todayISO, toISO,
 } from './format.js';
 import {
-  ACCENTS, ValidationError, addCategory, addExpense, exportJSON, importJSON, isEmpty, load, removeCategory,
-  removeExpense, removeRevenue, sampleState, save, setRevenue, updateProfile,
+  ACCENTS, EVERY, ValidationError, addCategory, addExpense, expandExpenses, exportJSON, importJSON, isEmpty, load, removeCategory,
+  removeExpense, removeRevenue, sampleState, save, setRevenue, updateExpense, updateProfile,
 } from './store.js';
 import { categoryTotals, dailySeries, monthRange, monthlySeries, periodStats, recentEntries, yearRange } from './stats.js';
 import { downloadText, downscaleImage, formatSize, readText } from './img.js';
@@ -15,6 +15,7 @@ import { downloadBinary, loadExcelJS, writeXlsx } from './xlsx.js';
 import * as auth from './auth.js';
 import { createDrive, fileUrl } from './drive.js';
 import { createSync } from './sync.js';
+import { createPhotos } from './photos.js';
 import { FILE_NAME } from './sheetmodel.js';
 
 // ---------- État ----------
@@ -32,10 +33,16 @@ let state = load(storage);
 const start = new Date();
 const ui = {
   y: start.getFullYear(), m: start.getMonth() + 1, sel: todayISO(start),
-  period: 'month', menu: false, cat: null, doc: null, accent: null,
+  period: 'month', menu: false, cat: null, accent: null,
+  form: newProofForm(), edit: null, viewer: null, target: 'exp', expAll: false,
   exp: { y: start.getFullYear(), period: 'year', sheet: 0 },
 };
 const $ = (sel, root = document) => root.querySelector(sel);
+
+/** Justificatifs et récurrence du frais en cours de saisie (formulaire d'ajout) ou de modification (fiche). */
+function newProofForm() {
+  return { docs: [], noDoc: false, recur: false, every: 'month', end: '' };
+}
 
 function commit(next) {
   state = next;
@@ -44,6 +51,7 @@ function commit(next) {
     return false;
   }
   sync.pushSoon();
+  photos.uploadSoon();
   return true;
 }
 
@@ -64,8 +72,9 @@ function askConflict() {
   return 'cancel';
 }
 
+const drive = createDrive({ fetchFn: (...a) => fetch(...a), getToken: auth.getToken });
 const sync = createSync({
-  drive: createDrive({ fetchFn: (...a) => fetch(...a), getToken: auth.getToken }),
+  drive,
   auth,
   persist,
   getState: () => state,
@@ -83,12 +92,30 @@ const sync = createSync({
     }
   },
   askConflict,
-  onStatus: () => {
+  onStatus: (st) => {
+    if (st.phase === 'synced') photos.uploadSoon();
     renderChrome();
     const sec = $('#sec-google');
     if (sec) sec.innerHTML = googleInner();
   },
 });
+
+// ---------- Photos des justificatifs (envoyées dans le Drive en arrière-plan) ----------
+let uploadTimer = null;
+const photos = {
+  ...createPhotos({
+    drive,
+    getState: () => state,
+    setState: (next) => { commit(next); },
+    canUpload: () => ['synced', 'pending'].includes(sync.getStatus().phase),
+    toUrl: (blob) => URL.createObjectURL(blob),
+    onChange: () => { refreshExpList(); renderSheet(); },
+  }),
+  uploadSoon() {
+    clearTimeout(uploadTimer);
+    uploadTimer = setTimeout(() => photos.uploadPending(), 800);
+  },
+};
 
 const isSyncing = () => sync.getStatus().phase !== 'off';
 
@@ -123,6 +150,7 @@ const ICONS = {
   download: '<path d="M12 4v12M7 11l5 5 5-5M4 20h16"/>',
   sheet: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/>',
   cloud: '<path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 9a4.5 4.5 0 0 1 .5 9z"/>',
+  repeat: '<path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/>',
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5"/>',
 };
 const svg = (name, size = 20, sw = 2) =>
@@ -245,9 +273,9 @@ function recentItem(r) {
       <div class="item-title">CA du jour</div><div class="item-sub">${esc(relDate(r.date))}${r.count != null ? ` · ${r.count} consultation${r.count > 1 ? 's' : ''}` : ''}</div></div>
       <div class="item-amount">+ ${eur(r.amount)}</div></div>`;
   }
-  return `<div class="item"><div class="item-ico cost">${svg('receipt')}</div><div class="item-body">
-    <div class="item-title">${esc(r.note || r.category)}</div><div class="item-sub">${esc(relDate(r.date))} · ${esc(r.category)}${r.hasDoc ? ' · document joint' : ''}</div></div>
-    <div class="item-amount cost">− ${eur(r.amount)}</div></div>`;
+  return `<button type="button" class="item item-btn" data-action="open-expense" data-id="${esc(r.id)}"><div class="item-ico cost">${svg(r.recurring ? 'repeat' : 'receipt')}</div><div class="item-body">
+    <div class="item-title">${esc(r.note || r.category)}</div><div class="item-sub">${esc(relDate(r.date))} · ${esc(r.category)}${r.hasDoc ? ' · justificatif joint' : ''}${r.recurring ? ' · récurrent' : ''}</div></div>
+    <div class="item-amount cost">− ${eur(r.amount)}</div></button>`;
 }
 
 function dashView() {
@@ -380,48 +408,206 @@ function caPanel() {
     </div>`;
 }
 
-function docZone() {
-  const d = ui.doc;
-  if (d) {
-    return `<div class="attached"><div class="thumb">${d.dataUrl ? `<img src="${esc(d.dataUrl)}" alt="Aperçu du justificatif">` : svg('file', 24)}</div>
-      <div class="item-body"><div class="item-title">${esc(d.name)}</div><div class="item-sub">${esc(formatSize(d.size))}${d.dataUrl ? ' · prêt à être associé au frais' : ' · PDF : seul le nom est conservé'}</div></div>
-      <button type="button" class="icon-btn" data-action="detach" aria-label="Retirer le document">${svg('x', 18, 2.4)}</button></div>`;
+// ---------- Justificatifs et récurrence d'un frais (formulaire d'ajout « exp » et fiche de modification « ed ») ----------
+const formOf = (scope) => (scope === 'ed' ? ui.edit : ui.form);
+
+function photoTile(d, scope) {
+  const hasImg = d.dataUrl || d.driveId;
+  const inner = hasImg
+    ? `<img data-doc="${esc(d.id)}" alt="${esc(d.name)}"${d.dataUrl ? ` src="${esc(d.dataUrl)}"` : ''}>`
+    : `<span class="photo-file">${svg('file', 24)}<small>${esc(d.name)}</small></span>`;
+  const pending = d.dataUrl && !d.driveId;
+  return `<div class="photo">
+    <button type="button" class="photo-open" ${hasImg ? `data-action="view-photo" data-scope="${scope}" data-id="${esc(d.id)}"` : 'disabled'} aria-label="${hasImg ? 'Agrandir' : ''} ${esc(d.name)}">${inner}</button>
+    ${pending ? `<span class="photo-tag" title="Sera envoyée dans votre Drive dès que possible">${isSyncing() ? 'envoi…' : 'sur cet appareil'}</span>` : ''}
+    <button type="button" class="photo-del" data-action="detach" data-scope="${scope}" data-id="${esc(d.id)}" aria-label="Retirer ${esc(d.name)}">${svg('x', 14, 2.6)}</button></div>`;
+}
+
+function proofBlock(scope) {
+  const f = formOf(scope);
+  return `<div class="photo-grid">${f.docs.map((d) => photoTile(d, scope)).join('')}</div>
+    ${f.noDoc ? '<p class="muted" style="font-size:14px">Ce frais est marqué « sans justificatif » : il n\'y a pas de photo à joindre.</p>' : `<div class="btns">
+      <button type="button" class="btn btn-outline" data-action="open-cam" data-scope="${scope}">${svg('camera', 20)}Prendre une photo</button>
+      <button type="button" class="btn btn-outline" data-action="open-file" data-scope="${scope}">${svg('image', 20)}${f.docs.length ? 'Ajouter une autre photo' : 'Choisir des fichiers'}</button></div>`}
+    <label class="check"><input type="checkbox" id="${scope}-nodoc" ${f.noDoc ? 'checked' : ''}><span>Sans justificatif <small>(rien à joindre pour ce frais)</small></span></label>`;
+}
+
+function recurBlock(scope) {
+  const f = formOf(scope);
+  return `<label class="check"><input type="checkbox" id="${scope}-recur" ${f.recur ? 'checked' : ''}><span>Frais récurrent <small>(crédit, abonnement, loyer…)</small></span></label>
+    ${f.recur ? `<div class="row recur-row">
+      <div class="field" style="flex:1 1 160px"><label for="${scope}-every">Répéter</label>
+        <select class="input" id="${scope}-every">${Object.entries(EVERY).map(([k, v]) => `<option value="${k}" ${k === f.every ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1 1 160px"><label for="${scope}-end">Date de fin <small>(facultatif)</small></label>
+        <input class="input" type="date" id="${scope}-end" value="${esc(f.end)}"></div></div>
+      <p class="muted" style="font-size:13px">Le frais est compté à chaque échéance, de la date de début jusqu'à la date de fin (ou sans fin). Les échéances à venir ne sont pas comptées.</p>` : ''}`;
+}
+
+const dateLabel = (scope) => (formOf(scope).recur ? 'Date de début' : 'Date du frais');
+
+function renderProof(scope) {
+  const el = $(`#${scope}-proof`);
+  if (el) el.innerHTML = proofBlock(scope);
+  hydrateImages();
+}
+
+function renderRecur(scope) {
+  const el = $(`#${scope}-recur-zone`);
+  if (el) el.innerHTML = recurBlock(scope);
+  const lab = $(`#${scope}-date-label`);
+  if (lab) lab.textContent = dateLabel(scope);
+}
+
+const findDoc = (id) => [...(ui.edit?.docs ?? []), ...ui.form.docs, ...(ui.viewer?.docs ?? [])].find((d) => d.id === id);
+
+/** Charge les images qui ne sont pas sur l'appareil (photos prises sur un autre appareil : téléchargées depuis le Drive). */
+function hydrateImages() {
+  for (const img of document.querySelectorAll('img[data-doc]:not([src])')) {
+    const doc = findDoc(img.dataset.doc);
+    if (!doc) continue;
+    photos.urlOf(doc).then((url) => { if (url) img.src = url; }).catch(() => {
+      img.replaceWith(Object.assign(document.createElement('span'), { className: 'photo-file', innerHTML: `${svg('image', 24)}<small>Indisponible hors ligne</small>` }));
+    });
   }
-  return `<div class="dropzone" id="dropzone">
-    ${svg('upload', 32, 1.8)}
-    <div class="only-desktop" style="font-weight:600">Glissez un ticket ou une facture ici</div>
-    <div class="muted" style="font-size:13px">Image ou PDF</div>
-    <div class="btns"><button type="button" class="btn btn-primary" data-action="open-cam">${svg('camera', 20)}Prendre la photo</button>
-      <button type="button" class="btn btn-outline" data-action="open-file">${svg('image', 20)}Choisir un fichier</button></div></div>`;
+}
+
+// ---------- Liste des frais (cliquables) ----------
+const PROOF_TAGS = (e) => (e.docs.length ? `<span class="tag ok">${e.docs.length} photo${e.docs.length > 1 ? 's' : ''}</span>`
+  : e.noDoc ? '<span class="tag">Sans justificatif</span>' : '<span class="tag warn">Justificatif manquant</span>');
+
+function expRow(e) {
+  const meta = e.recur
+    ? `${EVERY[e.recur.every]} · depuis le ${shortDate(e.date)}${e.recur.end ? ` · jusqu'au ${shortDate(e.recur.end)}` : ' · sans fin'}`
+    : `${relDate(e.date)} · ${e.category}`;
+  return `<button type="button" class="item item-btn" data-action="open-expense" data-id="${esc(e.id)}" style="padding:10px 0">
+    <div class="item-ico cost" style="width:36px;height:36px">${svg(e.recur ? 'repeat' : 'receipt', 18)}</div>
+    <div class="item-body"><div class="item-title">${esc(e.note || e.category)}</div><div class="item-sub">${esc(meta)}</div><div class="item-tags">${PROOF_TAGS(e)}</div></div>
+    <div class="item-amount cost" style="font-size:15px">− ${eur2(e.amount)}</div>${svg('right', 16, 2)}</button>`;
+}
+
+function expList() {
+  const series = state.expenses.filter((e) => e.recur).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const single = state.expenses.filter((e) => !e.recur).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1));
+  const shown = ui.expAll ? single : single.slice(0, 5);
+  return `${series.length ? `<div class="muted" style="font-size:14px;font-weight:700;margin-bottom:4px">Frais récurrents</div>${series.map(expRow).join('')}` : ''}
+    <div class="muted" style="font-size:14px;font-weight:700;margin:${series.length ? '14px' : '0'} 0 4px">${ui.expAll ? 'Tous les frais' : 'Derniers frais'}</div>
+    ${shown.length ? shown.map(expRow).join('') : '<p class="muted" style="font-size:14px">Aucun frais saisi.</p>'}
+    ${single.length > 5 ? `<button type="button" class="btn btn-ghost" data-action="toggle-all-exp" style="margin-top:6px">${ui.expAll ? 'Réduire la liste' : `Voir les ${single.length} frais`}</button>` : ''}`;
+}
+
+function refreshExpList() {
+  const el = $('#exp-list');
+  if (el) el.innerHTML = expList();
 }
 
 function expPanel() {
   const cats = state.categories;
   if (!ui.cat || !cats.includes(ui.cat)) ui.cat = cats[0] ?? null;
-  const recent = [...state.expenses].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4);
   return `
     <div class="panel-title"><span class="dot cost"></span><h2>Ajouter un frais</h2></div>
     <form class="stack gap-18" id="form-exp" novalidate>
-      <div class="stack gap-8"><div class="field-label" style="font-size:13px;font-weight:600;color:var(--muted)">Document justificatif</div><div id="doc-zone">${docZone()}</div></div>
+      <div class="stack gap-8"><div class="field-label" style="font-size:13px;font-weight:600;color:var(--muted)">Justificatifs (photos)</div>
+        <div class="stack gap-8" id="exp-proof">${proofBlock('exp')}</div></div>
       <div class="row">
         <div class="field" style="flex:1 1 160px"><label for="exp-amount">Montant TTC</label>
           <div class="input-money cost"><input id="exp-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00"><span>€</span></div></div>
-        <div class="field" style="flex:1 1 160px"><label for="exp-date">Date du frais</label>
+        <div class="field" style="flex:1 1 160px"><label for="exp-date" id="exp-date-label">${dateLabel('exp')}</label>
           <input class="input" id="exp-date" type="date" value="${today()}" required></div>
       </div>
+      <div class="stack gap-8" id="exp-recur-zone">${recurBlock('exp')}</div>
       <div class="stack gap-8"><div class="field-label" style="font-size:13px;font-weight:600;color:var(--muted)" id="cat-label">Catégorie</div>
         <div class="pills" role="group" aria-labelledby="cat-label">${cats.length ? cats.map((c) => `<button type="button" class="pill" data-action="pick-cat" data-name="${esc(c)}" aria-pressed="${c === ui.cat}">${esc(c)}</button>`).join('') : '<p class="muted">Aucune catégorie : ajoutez-en dans <a href="#/profil/categories">Profil</a>.</p>'}</div></div>
       <div class="field"><label for="exp-note">Note (facultatif)</label><input class="input" id="exp-note" type="text" maxlength="200" placeholder="Fournisseur, objet…" autocomplete="off"></div>
       <p class="error" id="err-exp" role="alert"></p>
       <button type="submit" class="btn btn-cost btn-lg">${svg('check', 20, 2.4)}Enregistrer le frais</button>
     </form>
-    <div class="stack" style="border-top:1px solid var(--line-soft);padding-top:14px">
-      <div class="muted" style="font-size:14px;font-weight:700;margin-bottom:4px">Derniers frais</div>
-      ${recent.length ? recent.map((e) => `<div class="item" style="padding:10px 0"><div class="item-ico cost" style="width:36px;height:36px">${svg('receipt', 18)}</div>
-        <div class="item-body"><div class="item-title">${esc(e.note || e.category)}</div><div class="item-sub">${esc(relDate(e.date))} · ${esc(e.category)}${e.doc ? ' · document joint' : ''}</div></div>
-        <div class="item-amount cost" style="font-size:15px">− ${eur2(e.amount)}</div>
-        <button type="button" class="icon-btn" data-action="del-expense" data-id="${esc(e.id)}" aria-label="Supprimer le frais ${esc(e.note || e.category)}">${svg('trash', 18)}</button></div>`).join('') : '<p class="muted" style="font-size:14px">Aucun frais saisi.</p>'}
-    </div>`;
+    <div class="stack" style="border-top:1px solid var(--line-soft);padding-top:14px" id="exp-list">${expList()}</div>`;
+}
+
+// ---------- Fiche d'un frais (modification, photos, suppression) ----------
+function openExpense(id) {
+  const e = state.expenses.find((x) => x.id === id);
+  if (!e) return;
+  ui.edit = {
+    id, date: e.date, amount: e.amount.toFixed(2).replace('.', ','), category: e.category, note: e.note,
+    docs: e.docs.map((d) => ({ ...d })), orig: e.docs.map((d) => ({ ...d })), noDoc: e.noDoc,
+    recur: !!e.recur, every: e.recur?.every ?? 'month', end: e.recur?.end ?? '',
+  };
+  renderSheet();
+  $('#ed-amount')?.focus();
+}
+
+function closeSheet() {
+  ui.edit = null;
+  renderSheet();
+}
+
+function renderSheet() {
+  const el = $('#sheet');
+  if (!el) return;
+  const f = ui.edit;
+  el.hidden = !f;
+  document.body.classList.toggle('modal-open', !!f || !!ui.viewer);
+  if (!f) {
+    el.innerHTML = '';
+    return;
+  }
+  const keep = el.querySelector('.sheet-body')?.scrollTop ?? 0;
+  const cats = state.categories.includes(f.category) ? state.categories : [...state.categories, f.category];
+  el.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ed-title">
+      <div class="sheet-head"><h2 id="ed-title">${f.recur ? 'Frais récurrent' : 'Frais'}</h2>
+        <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Fermer">${svg('x', 20, 2.4)}</button></div>
+      <form class="sheet-body stack gap-18" id="form-edit" novalidate>
+        <div class="row">
+          <div class="field" style="flex:1 1 150px"><label for="ed-amount">Montant TTC</label>
+            <div class="input-money cost"><input id="ed-amount" type="text" inputmode="decimal" autocomplete="off" value="${esc(f.amount)}"><span>€</span></div></div>
+          <div class="field" style="flex:1 1 150px"><label for="ed-date" id="ed-date-label">${dateLabel('ed')}</label>
+            <input class="input" id="ed-date" type="date" value="${esc(f.date)}" required></div>
+        </div>
+        <div class="stack gap-8" id="ed-recur-zone">${recurBlock('ed')}</div>
+        <div class="field"><label for="ed-cat">Catégorie</label>
+          <select class="input" id="ed-cat">${cats.map((c) => `<option value="${esc(c)}" ${c === f.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+        <div class="field"><label for="ed-note">Note</label><input class="input" id="ed-note" type="text" maxlength="200" value="${esc(f.note)}" autocomplete="off"></div>
+        <div class="stack gap-8"><div class="field-label" style="font-size:13px;font-weight:600;color:var(--muted)">Justificatifs (photos)</div>
+          <div class="stack gap-8" id="ed-proof">${proofBlock('ed')}</div></div>
+        ${f.recur ? '<p class="muted" style="font-size:13px">Les modifications valent pour toutes les échéances de ce frais.</p>' : ''}
+        <p class="error" id="err-edit" role="alert"></p>
+        <div class="sheet-actions">
+          <button type="submit" class="btn btn-cost btn-lg">${svg('check', 20, 2.4)}Enregistrer</button>
+          <button type="button" class="btn btn-danger" data-action="edit-delete">${svg('trash', 18)}Supprimer${f.recur ? ' la série' : ''}</button></div>
+      </form></div>`;
+  el.querySelector('.sheet-body').scrollTop = keep;
+  hydrateImages();
+}
+
+// ---------- Visionneuse de photos ----------
+function openViewer(docs, id) {
+  const list = docs.filter((d) => d.dataUrl || d.driveId);
+  const i = Math.max(0, list.findIndex((d) => d.id === id));
+  ui.viewer = { docs: list, i };
+  renderViewer();
+}
+
+function renderViewer() {
+  const el = $('#viewer');
+  if (!el) return;
+  const v = ui.viewer;
+  el.hidden = !v;
+  document.body.classList.toggle('modal-open', !!ui.edit || !!v);
+  if (!v) {
+    el.innerHTML = '';
+    return;
+  }
+  const d = v.docs[v.i];
+  el.innerHTML = `<div class="viewer-backdrop" data-action="close-viewer"></div>
+    <div class="viewer-box" role="dialog" aria-modal="true" aria-label="Photo du justificatif">
+      <img data-doc="${esc(d.id)}" alt="${esc(d.name)}"${d.dataUrl ? ` src="${esc(d.dataUrl)}"` : ''}>
+      <div class="viewer-bar"><button type="button" class="icon-btn light" data-action="viewer-prev" ${v.docs.length < 2 ? 'hidden' : ''} aria-label="Photo précédente">${svg('left', 22, 2.4)}</button>
+        <span>${esc(d.name)} · ${v.i + 1}/${v.docs.length}</span>
+        <button type="button" class="icon-btn light" data-action="viewer-next" ${v.docs.length < 2 ? 'hidden' : ''} aria-label="Photo suivante">${svg('right', 22, 2.4)}</button>
+        <button type="button" class="icon-btn light" data-action="close-viewer" aria-label="Fermer">${svg('x', 22, 2.4)}</button></div></div>`;
+  hydrateImages();
 }
 
 /** Montant d'une case du calendrier : entier en gras, centimes (jamais arrondis) en petit dessous. */
@@ -475,7 +661,7 @@ function exportView() {
   const sheet = report.sheets[sheetIdx];
   const fileName = reportFileName(period);
   const nOps = Object.keys(state.revenues).filter((d) => d >= `${period.y}-${String(period.m1).padStart(2, '0')}` && d.slice(0, 7) <= `${period.y}-${String(period.m2).padStart(2, '0')}`).length
-    + state.expenses.filter((e) => e.date.slice(0, 4) === String(period.y) && Number(e.date.slice(5, 7)) >= period.m1 && Number(e.date.slice(5, 7)) <= period.m2).length;
+    + expandExpenses(state).filter((e) => e.date.slice(0, 4) === String(period.y) && Number(e.date.slice(5, 7)) >= period.m1 && Number(e.date.slice(5, 7)) <= period.m2).length;
 
   return `<div class="page">
     ${mobileHead('Comptable', 'Export Excel')}
@@ -584,22 +770,29 @@ function fail(id, msg) {
   if (el) el.textContent = msg;
 }
 
-async function attachFile(file) {
-  if (!file) return;
-  try {
-    if (file.type.startsWith('image/')) {
-      ui.doc = { name: file.name || 'justificatif.jpg', size: file.size, type: 'image/jpeg', dataUrl: await downscaleImage(file) };
-    } else if (file.type === 'application/pdf') {
-      ui.doc = { name: file.name, size: file.size, type: file.type };
-    } else {
-      toast('Format non pris en charge : choisissez une image ou un PDF.', true);
-      return;
+async function attachFiles(files, scope = ui.target) {
+  const f = formOf(scope);
+  if (!f || !files.length) return;
+  let skipped = 0;
+  for (const file of files) {
+    try {
+      if (file.type.startsWith('image/')) {
+        f.docs.push({ id: newDocId(), name: file.name || 'justificatif.jpg', size: file.size, type: 'image/jpeg', dataUrl: await downscaleImage(file) });
+      } else if (file.type === 'application/pdf') {
+        f.docs.push({ id: newDocId(), name: file.name, size: file.size, type: file.type });
+      } else {
+        skipped += 1;
+      }
+    } catch {
+      skipped += 1;
     }
-    $('#doc-zone').innerHTML = docZone();
-  } catch {
-    toast("Impossible de lire ce fichier.", true);
   }
+  f.noDoc = false;
+  if (skipped) toast(`${skipped} fichier${skipped > 1 ? 's' : ''} non pris en charge ou illisible${skipped > 1 ? 's' : ''} (images ou PDF uniquement).`, true);
+  renderProof(scope);
 }
+
+const newDocId = () => 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 const actions = {
   'toggle-menu': () => { ui.menu = !ui.menu; renderChrome(); if (ui.menu) $('.menu a')?.focus(); },
@@ -624,17 +817,32 @@ const actions = {
     ui.cat = el.dataset.name;
     document.querySelectorAll('.panel-frais .pill').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.name === ui.cat)));
   },
-  'open-cam': () => $('#in-cam').click(),
-  'open-file': () => $('#in-file').click(),
-  detach: () => { ui.doc = null; $('#doc-zone').innerHTML = docZone(); },
-  'del-expense': (el) => {
-    if (!confirm('Supprimer ce frais ?')) return;
-    commit(removeExpense(state, el.dataset.id));
+  'open-cam': (el) => { ui.target = el.dataset.scope || 'exp'; $('#in-cam').click(); },
+  'open-file': (el) => { ui.target = el.dataset.scope || 'exp'; $('#in-file').click(); },
+  detach: (el) => {
+    const scope = el.dataset.scope || 'exp';
+    const f = formOf(scope);
+    f.docs = f.docs.filter((d) => d.id !== el.dataset.id);
+    renderProof(scope);
+  },
+  'view-photo': (el) => openViewer(formOf(el.dataset.scope || 'exp').docs, el.dataset.id),
+  'open-expense': (el) => openExpense(el.dataset.id),
+  'close-sheet': () => closeSheet(),
+  'close-viewer': () => { ui.viewer = null; renderViewer(); },
+  'viewer-prev': () => { ui.viewer.i = (ui.viewer.i - 1 + ui.viewer.docs.length) % ui.viewer.docs.length; renderViewer(); },
+  'viewer-next': () => { ui.viewer.i = (ui.viewer.i + 1) % ui.viewer.docs.length; renderViewer(); },
+  'toggle-all-exp': () => { ui.expAll = !ui.expAll; refreshExpList(); },
+  'edit-delete': () => {
+    const f = ui.edit;
+    const e = state.expenses.find((x) => x.id === f.id);
+    if (!e) return closeSheet();
+    const msg = e.recur ? 'Supprimer ce frais récurrent et toutes ses échéances ?' : 'Supprimer ce frais ?';
+    if (!confirm(`${msg}${e.docs.some((d) => d.driveId) ? '\nSes photos seront aussi supprimées du Drive.' : ''}`)) return;
+    commit(removeExpense(state, f.id));
+    photos.removeRemote(e.docs);
     toast('Frais supprimé');
-    const keep = { a: $('#exp-amount')?.value, n: $('#exp-note')?.value };
-    renderExp();
-    $('#exp-amount').value = keep.a ?? '';
-    $('#exp-note').value = keep.n ?? '';
+    closeSheet();
+    render();
   },
   'pick-accent': (el) => {
     ui.accent = el.dataset.hex;
@@ -719,7 +927,12 @@ document.addEventListener('click', (ev) => {
 });
 
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape' && ui.menu) {
+  if (ev.key === 'Escape' && ui.viewer) {
+    ui.viewer = null;
+    renderViewer();
+  } else if (ev.key === 'Escape' && ui.edit) {
+    closeSheet();
+  } else if (ev.key === 'Escape' && ui.menu) {
     ui.menu = false;
     renderChrome();
     $('.who-btn')?.focus();
@@ -744,22 +957,42 @@ document.addEventListener('submit', (ev) => {
     }
   } else if (id === 'form-exp') {
     const amount = parseAmount($('#exp-amount').value);
-    if (amount === null) return fail('#err-exp', 'Montant invalide : saisissez par exemple 86 ou 86,40.');
+    if (amount === null) return fail('#err-exp', 'Montant invalide : saisissez par exemple 49 ou 49,90.');
+    const f = ui.form;
     try {
       const { state: next, expense } = addExpense(state, {
-        date: $('#exp-date').value, amount, category: ui.cat, note: $('#exp-note').value, doc: ui.doc,
+        date: $('#exp-date').value, amount, category: ui.cat, note: $('#exp-note').value,
+        docs: f.docs, noDoc: f.noDoc, recur: f.recur ? { every: f.every, end: f.end } : null,
       });
-      if (!commit(next) && ui.doc?.dataUrl) {
-        const light = { ...next, expenses: next.expenses.map((e) => (e.id === expense.id ? { ...e, doc: { ...e.doc, dataUrl: undefined } } : e)) };
-        if (commit(light)) toast('Frais enregistré, mais la photo n’a pas pu être conservée (stockage plein).', true);
+      if (!commit(next) && expense.docs.some((d) => d.dataUrl)) {
+        const light = { ...next, expenses: next.expenses.map((e) => (e.id === expense.id ? { ...e, docs: e.docs.map((d) => ({ ...d, dataUrl: undefined })) } : e)) };
+        if (commit(light)) toast('Frais enregistré, mais les photos n’ont pas pu être conservées (stockage plein).', true);
       } else {
-        toast('Frais enregistré');
+        toast(f.recur ? 'Frais récurrent enregistré' : 'Frais enregistré');
       }
-      ui.doc = null;
+      ui.form = newProofForm();
       renderExp();
     } catch (e) {
       if (!(e instanceof ValidationError)) throw e;
       fail('#err-exp', e.message);
+    }
+  } else if (id === 'form-edit') {
+    const f = ui.edit;
+    const amount = parseAmount($('#ed-amount').value);
+    if (amount === null) return fail('#err-edit', 'Montant invalide : saisissez par exemple 49 ou 49,90.');
+    try {
+      const { state: next } = updateExpense(state, f.id, {
+        date: $('#ed-date').value, amount, category: $('#ed-cat').value, note: $('#ed-note').value,
+        docs: f.docs, noDoc: f.noDoc, recur: f.recur ? { every: f.every, end: f.end } : null,
+      });
+      commit(next);
+      photos.removeRemote(f.orig.filter((o) => o.driveId && !f.docs.some((d) => d.id === o.id)));
+      toast('Frais modifié');
+      closeSheet();
+      render();
+    } catch (e) {
+      if (!(e instanceof ValidationError)) throw e;
+      fail('#err-edit', e.message);
     }
   } else if (id === 'form-profile') {
     commit(updateProfile(state, {
@@ -786,9 +1019,24 @@ document.addEventListener('change', async (ev) => {
     $(`[data-exp="${input.dataset.exp}"]`)?.focus();
     return;
   }
+  const m = /^(exp|ed)-(nodoc|recur|every|end)$/.exec(input.id ?? '');
+  if (m) {
+    const [, scope, what] = m;
+    const f = formOf(scope);
+    if (what === 'nodoc') {
+      if (input.checked && f.docs.length && !confirm('Retirer les photos déjà jointes à ce frais ?')) { input.checked = false; return; }
+      f.noDoc = input.checked;
+      if (input.checked) f.docs = [];
+      renderProof(scope);
+    } else if (what === 'recur') {
+      f.recur = input.checked;
+      renderRecur(scope);
+    } else f[what] = input.value;
+    return;
+  }
   const file = input.files?.[0];
   if (!file) return;
-  if (input.id === 'in-cam' || input.id === 'in-file') await attachFile(file);
+  if (input.id === 'in-cam' || input.id === 'in-file') await attachFiles([...input.files]);
   else if (input.id === 'in-photo') {
     try {
       commit(updateProfile(state, { photo: await downscaleImage(file, 256, 0.8) }));
@@ -815,14 +1063,16 @@ for (const type of ['dragover', 'dragleave', 'drop']) {
     if (!zone) return;
     ev.preventDefault();
     zone.classList.toggle('over', type === 'dragover');
-    if (type === 'drop') attachFile(ev.dataTransfer?.files?.[0]);
+    if (type === 'drop') attachFiles([...(ev.dataTransfer?.files ?? [])], 'exp');
   });
 }
 
 // ---------- Démarrage ----------
 document.body.insertAdjacentHTML('beforeend', `
   <input type="file" id="in-cam" accept="image/*" capture="environment" hidden>
-  <input type="file" id="in-file" accept="image/*,application/pdf" hidden>
+  <input type="file" id="in-file" accept="image/*,application/pdf" multiple hidden>
+  <div id="sheet" hidden></div>
+  <div id="viewer" hidden></div>
   <input type="file" id="in-photo" accept="image/*" hidden>
   <input type="file" id="in-import" accept="application/json,.json" hidden>`);
 window.addEventListener('hashchange', render);
