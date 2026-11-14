@@ -74,7 +74,9 @@ test('période sans donnée : tableaux valides, totaux nuls, plages de formules 
 });
 
 test('la part de chaque catégorie somme à 100 %', () => {
-  const state = sampleState(NOW);
+  let state = sampleState(NOW);
+  state = addExpense(state, { date: '2026-03-02', amount: 120, category: 'Consommables' }).state;
+  state = addExpense(state, { date: '2026-04-02', amount: 80, category: 'Logiciels' }).state;
   const rep = buildReport(state, resolvePeriod(2026, 'year'));
   const rows = sheet(rep, 'Synthèse').rows.filter((r) => r[2]?.fmt === 'pct' && r[0].kind !== 'total');
   assert.ok(rows.length >= 2);

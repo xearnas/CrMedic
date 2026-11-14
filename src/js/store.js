@@ -240,35 +240,43 @@ export function isEmpty(state) {
   return Object.keys(state.revenues).length === 0 && state.expenses.length === 0;
 }
 
-/** Données d'exemple déterministes, jusqu'à `now` inclus. */
+/**
+ * Données d'exemple déterministes, jusqu'à `now` inclus : un médecin qui travaille 3 jours par semaine
+ * (lundi, mardi, jeudi) pendant 45 semaines, avec 3 week-ends de garde dans l'année. Aucun frais.
+ */
+export const SAMPLE_OFF_WEEKS = [7, 15, 16, 30, 31, 32, 51]; // 7 semaines de repos -> 45 semaines travaillées
+export const SAMPLE_GUARD_WEEKS = [9, 22, 40];
+
 export function sampleState(now = new Date()) {
   let seed = 20260101;
   const rnd = () => {
     seed = (seed * 1664525 + 1013904223) % 4294967296;
     return seed / 4294967296;
   };
+  const between = (lo, hi, step = 10) => Math.round((lo + rnd() * (hi - lo)) / step) * step;
   let state = { ...emptyState(), revenues: {}, expenses: [] };
   const today = todayISO(now);
   const y = now.getFullYear();
-  for (let m = 1; m <= now.getMonth() + 1; m++) {
+  const firstMonday = (7 - (new Date(Date.UTC(y, 0, 1)).getUTCDay() + 6) % 7) % 7; // jour de l'année du 1er lundi
+  const total = {}; // total d'un week-end de garde, tiré une seule fois par semaine
+  for (let m = 1; m <= 12; m++) {
     for (let d = 1; d <= daysInMonth(y, m); d++) {
       const iso = toISO(y, m, d);
-      if (iso > today) break;
-      const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-      if (dow === 0 || dow === 6 || rnd() < 0.08) continue;
-      const amount = Math.round((240 + rnd() * 280) / 5) * 5;
+      if (iso > today) return state;
+      const doy = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(y, 0, 1)) / 86400000);
+      const week = Math.floor((doy - firstMonday) / 7); // semaines 0..51, à partir du 1er lundi
+      if (week < 0 || week > 51) continue;
+      const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // 0 = lundi
+      if (SAMPLE_OFF_WEEKS.includes(week)) continue;
+      let amount = 0;
+      if ([0, 1, 3].includes(dow)) amount = between(500, 900);
+      else if (dow >= 5 && SAMPLE_GUARD_WEEKS.includes(week)) {
+        total[week] ??= between(300, 900);
+        const sat = Math.round((total[week] * (0.4 + rnd() * 0.2)) / 10) * 10;
+        amount = dow === 5 ? sat : total[week] - sat;
+        if (amount <= 0) continue;
+      } else continue;
       state = setRevenue(state, iso, amount, Math.max(1, Math.round(amount / 29)));
-    }
-    const plan = [
-      [1, 'Loyer & charges', 1050, 'Loyer du cabinet'],
-      [Math.min(8, daysInMonth(y, m)), 'Consommables', 80 + Math.round(rnd() * 500), 'Pharmacie'],
-      [Math.min(15, daysInMonth(y, m)), 'Déplacements', 40 + Math.round(rnd() * 80), 'Carburant'],
-      [Math.min(22, daysInMonth(y, m)), 'Consommables', 60 + Math.round(rnd() * 400), 'Matériel médical'],
-      [25, 'Logiciels', 49, 'Abonnement logiciel'],
-    ];
-    for (const [d, category, amount, note] of plan) {
-      const date = toISO(y, m, d);
-      if (date <= today) state = addExpense(state, { date, amount, category, note }).state;
     }
   }
   return state;

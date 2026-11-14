@@ -116,18 +116,33 @@ test('export puis import est sans perte ; un fichier étranger est refusé', () 
   assert.throws(() => s.importJSON('{"a":1}'), s.ValidationError);
 });
 
-test('sampleState est déterministe, borné à aujourd’hui et sans week-end', () => {
-  const now = new Date(2026, 9, 29);
+test('sampleState : 3 jours par semaine, 45 semaines, 3 gardes, aucun frais, borné à aujourd’hui', () => {
+  const now = new Date(2026, 11, 31);
   const a = s.sampleState(now);
-  const b = s.sampleState(now);
-  assert.deepEqual(a.revenues, b.revenues);
-  assert.ok(Object.keys(a.revenues).length > 100);
-  assert.ok(Object.keys(a.revenues).every((d) => d <= '2026-10-29'));
-  assert.ok(a.expenses.every((e) => e.date <= '2026-10-29'));
-  for (const d of Object.keys(a.revenues)) {
-    const dow = new Date(d + 'T00:00:00Z').getUTCDay();
-    assert.ok(dow !== 0 && dow !== 6, d);
+  assert.deepEqual(a.revenues, s.sampleState(now).revenues);
+  assert.equal(a.expenses.length, 0);
+  const byWeek = {};
+  for (const [d, r] of Object.entries(a.revenues)) {
+    const dt = new Date(d + 'T00:00:00Z');
+    const dow = (dt.getUTCDay() + 6) % 7;
+    const doy = Math.round((dt - Date.UTC(2026, 0, 1)) / 86400000);
+    const w = Math.floor((doy - 4) / 7); // le 1er lundi 2026 est le 5 janvier
+    (byWeek[w] ??= []).push({ dow, amount: r.amount });
   }
+  const weeks = Object.values(byWeek);
+  const guards = weeks.filter((x) => x.some((j) => j.dow >= 5));
+  assert.equal(guards.length, 3);
+  const open = Object.keys(byWeek).length;
+  assert.equal(open, 45);
+  for (const wk of weeks) {
+    const days = wk.filter((j) => j.dow < 5);
+    assert.deepEqual(days.map((j) => j.dow).sort(), [0, 1, 3]);
+    days.forEach((j) => assert.ok(j.amount >= 500 && j.amount <= 900, j.amount));
+    const we = wk.filter((j) => j.dow >= 5).reduce((t, j) => t + j.amount, 0);
+    if (we) assert.ok(we >= 300 && we <= 900, we);
+  }
+  const early = s.sampleState(new Date(2026, 9, 29));
+  assert.ok(Object.keys(early.revenues).every((d) => d <= '2026-10-29'));
 });
 
 test('nouvelles catégories par défaut, et ajout unique aux listes existantes (avant « Autre »)', () => {
