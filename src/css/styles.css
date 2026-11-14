@@ -511,3 +511,16 @@ body.modal-open { overflow: hidden; }
 @keyframes viewIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 #view > * { animation: viewIn .18s ease-out; }
 @media (prefers-reduced-motion: reduce) { #view > * { animation: none; } }
+
+/* ---- Boîtes de dialogue aux couleurs de l'application ---- */
+.dlg-root { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; }
+.dlg-backdrop { position: absolute; inset: 0; background: rgba(20, 30, 32, .55); animation: dlgFade .15s ease-out; }
+.dlg { position: relative; width: min(420px, 100%); background: var(--card, #fff); border-radius: 20px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.35); animation: dlgIn .18s ease-out; }
+.dlg h2 { font-size: 19px; margin: 0 0 8px; letter-spacing: -.01em; }
+.dlg p { margin: 0; color: var(--ink-soft); font-size: 15px; line-height: 1.5; }
+.dlg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.dlg-actions .btn { min-height: 46px; }
+@keyframes dlgFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dlgIn { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (max-width: 480px) { .dlg-actions { flex-direction: column-reverse; } .dlg-actions .btn { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .dlg, .dlg-backdrop { animation: none; } }

@@ -62,24 +62,14 @@ test('connexion : appareil vide et classeur rempli -> chargement du Drive', asyn
   assert.deepEqual(env.state.revenues, remote.revenues);
 });
 
-test('connexion : deux jeux de données -> l’utilisateur tranche', async () => {
+test('connexion : deux jeux de données -> le Drive fait foi, rien n’est écrasé', async () => {
   const local = setRevenue(emptyState(), '2026-10-01', 111, 3);
   const remote = sampleState(NOW);
-  let env = setup({ local, remote, askAnswer: 'pull' });
-  await env.sync.connect();
-  assert.deepEqual(env.state.revenues, remote.revenues);
-
-  env = setup({ local, remote, askAnswer: 'push' });
-  await env.sync.connect();
-  assert.equal(env.saves, 1);
-  assert.deepEqual(env.state.revenues, local.revenues);
-
-  env = setup({ local, remote, askAnswer: 'cancel' });
+  const env = setup({ local, remote, askAnswer: 'push' });
   await env.sync.connect();
   assert.equal(env.saves, 0);
-  assert.equal(env.saved, null);
-  assert.equal(env.sync.getStatus().phase, 'off');
-  assert.deepEqual(env.state.revenues, local.revenues);
+  assert.deepEqual(env.state.revenues, remote.revenues);
+  assert.equal(env.sync.getStatus().phase, 'synced');
 });
 
 test('pushSoon regroupe les modifications en un seul envoi', async () => {

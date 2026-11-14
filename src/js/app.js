@@ -79,10 +79,51 @@ const persist = {
   },
 };
 
-function askConflict() {
-  if (confirm("Le fichier « " + FILE_NAME + " » du Drive contient déjà des données, différentes de celles de cet appareil.\n\nOK : charger les données du Drive (celles de cet appareil seront remplacées).\nAnnuler : autres choix.")) return 'pull';
-  if (confirm('Remplacer le contenu du fichier Drive par les données de cet appareil ?\n\nOK : écraser le Drive.\nAnnuler : ne pas se connecter.')) return 'push';
-  return 'cancel';
+/** Boîte de dialogue aux couleurs de l'application (remplace confirm). Renvoie la valeur du bouton choisi. */
+function dialog({ title, message, buttons }) {
+  return new Promise((resolve) => {
+    const root = document.createElement('div');
+    root.className = 'dlg-root';
+    root.innerHTML = `<div class="dlg-backdrop"></div>
+      <div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlg-t" aria-describedby="dlg-m">
+        <h2 id="dlg-t">${esc(title)}</h2>
+        <p id="dlg-m">${esc(message).replace(/\n/g, '<br>')}</p>
+        <div class="dlg-actions">${buttons.map((b, i) => `<button type="button" class="btn ${b.kind ?? 'btn-outline'}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div>
+      </div>`;
+    const prev = document.activeElement;
+    const done = (v) => { document.removeEventListener('keydown', onKey, true); root.remove(); prev?.focus?.(); resolve(v); };
+    const cancelValue = buttons.find((b) => b.cancel)?.value;
+    const onKey = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); done(cancelValue); } };
+    root.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button[data-i]');
+      if (b) done(buttons[Number(b.dataset.i)].value);
+      else if (ev.target.classList.contains('dlg-backdrop')) done(cancelValue);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(root);
+    root.querySelector(`button[data-i="${buttons.findIndex((b) => b.focus)}"]`)?.focus() ?? root.querySelector('button')?.focus();
+  });
+}
+
+/** Question oui/non. */
+function ask(title, message, { ok = 'Confirmer', cancel = 'Annuler', danger = false } = {}) {
+  return dialog({ title, message, buttons: [
+    { label: cancel, value: false, cancel: true, focus: true },
+    { label: ok, value: true, kind: danger ? 'btn-danger' : 'btn-primary' },
+  ] });
+}
+
+async function askConflict() {
+  const choice = await dialog({
+    title: 'Deux versions des données',
+    message: `Le classeur « ${FILE_NAME} » du Drive a changé, et cet appareil contient aussi des modifications non envoyées.`,
+    buttons: [
+      { label: 'Annuler', value: 'cancel', cancel: true },
+      { label: 'Garder cet appareil', value: 'push' },
+      { label: 'Charger le Drive', value: 'pull', kind: 'btn-primary', focus: true },
+    ],
+  });
+  return choice ?? 'cancel';
 }
 
 const drive = createDrive({ fetchFn: (...a) => fetch(...a), getToken: auth.getToken });
@@ -926,8 +967,8 @@ const actions = {
   'cal-prev': () => moveMonth(-1),
   'cal-next': () => moveMonth(1),
   'pick-day': (el) => { ui.sel = el.dataset.date; renderCA(); $(`[data-date="${ui.sel}"]`)?.focus(); },
-  'del-ca': () => {
-    if (!confirm(`Supprimer la saisie du ${longDate(ui.sel).toLowerCase()} ?`)) return;
+  'del-ca': async () => {
+    if (!await ask('Supprimer la saisie ?', `La saisie du ${longDate(ui.sel).toLowerCase()} sera supprimée.`, { ok: 'Supprimer', danger: true })) return;
     commit(removeRevenue(state, ui.sel));
     toast('Saisie supprimée');
     renderCA();
@@ -951,12 +992,12 @@ const actions = {
   'viewer-prev': () => { ui.viewer.i = (ui.viewer.i - 1 + ui.viewer.docs.length) % ui.viewer.docs.length; renderViewer(); },
   'viewer-next': () => { ui.viewer.i = (ui.viewer.i + 1) % ui.viewer.docs.length; renderViewer(); },
   'toggle-all-exp': () => { ui.expAll = !ui.expAll; refreshExpList(); },
-  'edit-delete': () => {
+  'edit-delete': async () => {
     const f = ui.edit;
     const e = state.expenses.find((x) => x.id === f.id);
     if (!e) return closeSheet();
-    const msg = e.recur ? 'Supprimer ce frais récurrent et toutes ses échéances ?' : 'Supprimer ce frais ?';
-    if (!confirm(`${msg}${e.docs.some((d) => d.driveId) ? '\nSes photos seront aussi supprimées du Drive.' : ''}`)) return;
+    const msg = e.recur ? 'Ce frais récurrent et toutes ses échéances seront supprimés.' : 'Ce frais sera supprimé.';
+    if (!await ask('Supprimer ce frais ?', `${msg}${e.docs.some((d) => d.driveId) ? '\nSes photos seront aussi supprimées du Drive.' : ''}`, { ok: 'Supprimer', danger: true })) return;
     commit(removeExpense(state, f.id));
     photos.removeRemote(e.docs);
     toast('Frais supprimé');
@@ -1004,20 +1045,23 @@ const actions = {
   'google-connect': () => sync.connect(),
   'google-reconnect': () => sync.resume({ silent: false }),
   'google-sync': () => sync.syncNow(),
-  'google-disconnect': () => {
-    if (!confirm('Se déconnecter de Google ? Vos données restent sur cet appareil et dans le classeur du Drive.')) return;
-    sync.disconnect();
+  'google-disconnect': async () => {
+    if (!await ask('Se déconnecter de Google ?', "Cet appareil repartira d'un classeur vierge : aucun CA, aucun frais. Vos données restent intactes dans le classeur du Drive et reviendront à la prochaine connexion.", { ok: 'Se déconnecter', danger: true })) return;
+    await sync.disconnect();
+    state = { ...state, revenues: {}, expenses: [] };
+    if (storage) save(storage, state);
+    render();
     toast('Déconnecté de Google');
   },
-  'load-sample': () => {
+  'load-sample': async () => {
     if (isSyncing()) { toast("Déconnectez d'abord le compte Google : les données d'exemple écraseraient votre classeur.", true); return; }
-    if (!isEmpty(state) && !confirm("Remplacer vos données par des données d'exemple ?")) return;
+    if (!isEmpty(state) && !await ask('Charger les données d\'exemple ?', 'Vos données actuelles seront remplacées.', { ok: 'Remplacer', danger: true })) return;
     commit({ ...sampleState(), profile: state.profile, categories: state.categories });
     toast("Données d'exemple chargées");
     render();
   },
-  'clear-all': () => {
-    if (!confirm(`Effacer toutes les saisies (CA et frais)${isSyncing() ? ' sur cet appareil ET dans le classeur Drive' : ''} ? Cette action est définitive.`)) return;
+  'clear-all': async () => {
+    if (!await ask('Effacer toutes les saisies ?', `Tout le CA et tous les frais seront effacés${isSyncing() ? ' sur cet appareil ET dans le classeur Drive' : ''}. Cette action est définitive.`, { ok: 'Tout effacer', danger: true })) return;
     commit({ ...state, revenues: {}, expenses: [] });
     toast('Données effacées');
   },
@@ -1143,7 +1187,7 @@ document.addEventListener('change', async (ev) => {
     const [, scope, what] = m;
     const f = formOf(scope);
     if (what === 'nodoc') {
-      if (input.checked && f.docs.length && !confirm('Retirer les photos déjà jointes à ce frais ?')) { input.checked = false; return; }
+      if (input.checked && f.docs.length && !await ask('Retirer les photos ?', 'Les photos déjà jointes à ce frais seront retirées.', { ok: 'Retirer', danger: true })) { input.checked = false; return; }
       f.noDoc = input.checked;
       if (input.checked) f.docs = [];
       renderProof(scope);
@@ -1165,7 +1209,7 @@ document.addEventListener('change', async (ev) => {
     }
   } else if (input.id === 'in-import') {
     try {
-      if (!confirm('Importer ce fichier remplacera vos données actuelles. Continuer ?')) return;
+      if (!await ask('Importer ce fichier ?', 'Vos données actuelles seront remplacées.', { ok: 'Importer', danger: true })) return;
       commit(importJSON(await readText(file)));
       toast('Données importées');
       render();

@@ -103,10 +103,7 @@ export function createSync({
     if (plan === 'none') return pullState(id, tables, base);
     if (plan === 'pull') return pullState(id, tables, base);
     if (plan === 'push') return pushState(id);
-    const choice = await askConflict();
-    if (choice === 'pull') return pullState(id, tables, base);
-    if (choice === 'push') return pushState(id);
-    throw Object.assign(new Error('Connexion annulée.'), { cancelled: true });
+    return pullState(id, tables, base); // 'ask' : le classeur du Drive fait foi, on ne l'écrase jamais à la connexion
   }
 
   async function connect() {
