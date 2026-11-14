@@ -116,7 +116,7 @@ test('export puis import est sans perte ; un fichier étranger est refusé', () 
   assert.throws(() => s.importJSON('{"a":1}'), s.ValidationError);
 });
 
-test('sampleState : 3 jours par semaine, 45 semaines, 3 gardes, aucun frais, borné à aujourd’hui', () => {
+test('sampleState : 3 jours par semaine, 41 semaines, 3 gardes, aucun frais, borné à aujourd’hui', () => {
   const now = new Date(2026, 11, 31);
   const a = s.sampleState(now);
   assert.deepEqual(a.revenues, s.sampleState(now).revenues);
@@ -133,7 +133,7 @@ test('sampleState : 3 jours par semaine, 45 semaines, 3 gardes, aucun frais, bor
   const guards = weeks.filter((x) => x.some((j) => j.dow >= 5));
   assert.equal(guards.length, 3);
   const open = Object.keys(byWeek).length;
-  assert.equal(open, 45);
+  assert.equal(open, 41);
   for (const wk of weeks) {
     const days = wk.filter((j) => j.dow < 5);
     assert.deepEqual(days.map((j) => j.dow).sort(), [0, 1, 3]);

@@ -242,9 +242,9 @@ export function isEmpty(state) {
 
 /**
  * Données d'exemple déterministes, jusqu'à `now` inclus : un médecin qui travaille 3 jours par semaine
- * (lundi, mardi, jeudi) pendant 45 semaines, avec 3 week-ends de garde dans l'année. Aucun frais.
+ * (lundi, mardi, jeudi) pendant 41 semaines, avec 3 week-ends de garde dans l'année. Aucun frais.
  */
-export const SAMPLE_OFF_WEEKS = [7, 15, 16, 30, 31, 32, 51]; // 7 semaines de repos -> 45 semaines travaillées
+export const SAMPLE_OFF_WEEKS = [7, 8, 15, 16, 30, 31, 32, 33, 44, 50, 51]; // 11 semaines de repos -> 41 semaines travaillées
 export const SAMPLE_GUARD_WEEKS = [9, 22, 40];
 
 export function sampleState(now = new Date()) {
