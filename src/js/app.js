@@ -213,7 +213,7 @@ function render() {
   const titles = { dash: 'Chiffres', ca: 'CA du jour', frais: 'Ajouter un frais', profil: 'Profil et réglages', export: 'Export pour le comptable' };
   $('#view').innerHTML = views[route.name]();
   renderChrome(route);
-  document.body.classList.toggle('fit', route.name === 'dash'); // ordinateur : l'écran principal tient dans la fenêtre
+  document.body.classList.toggle('fit', route.name === 'dash' || route.name === 'export'); // ordinateur : l'écran principal tient dans la fenêtre
   document.title = `${titles[route.name]} — CrMedic`;
   const target = route.section && $(`#sec-${route.section}`);
   if (target) target.scrollIntoView({ block: 'start' });
@@ -781,11 +781,11 @@ function exportView() {
   const nOps = Object.keys(state.revenues).filter((d) => d >= `${period.y}-${String(period.m1).padStart(2, '0')}` && d.slice(0, 7) <= `${period.y}-${String(period.m2).padStart(2, '0')}`).length
     + expandExpenses(state).filter((e) => e.date.slice(0, 4) === String(period.y) && Number(e.date.slice(5, 7)) >= period.m1 && Number(e.date.slice(5, 7)) <= period.m2).length;
 
-  return `<div class="page">
+  return `<div class="page export">
     ${mobileHead('Comptable', 'Export Excel')}
     <div class="page-head"><h1>Export pour le comptable</h1><div class="muted">Un classeur Excel mis en forme, généré à partir de vos données</div></div>
-    <section class="card stack gap-14">
-      <div class="row" style="align-items:flex-end;gap:14px">
+    <section class="card stack gap-14 exp-ctl">
+      <div class="row exp-row" style="align-items:flex-end;gap:14px">
         <div class="field" style="flex:1 1 140px"><label for="exp-year">Année</label>
           <select class="input" id="exp-year" data-exp="y">${[...years].sort((a, b) => b - a).map((y) => `<option value="${y}" ${y === ui.exp.y ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
         <div class="field" style="flex:2 1 220px"><label for="exp-period">Période</label>
