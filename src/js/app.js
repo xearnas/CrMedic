@@ -254,7 +254,7 @@ function render() {
   const titles = { dash: 'Chiffres', ca: 'CA du jour', frais: 'Ajouter un frais', profil: 'Profil et réglages', export: 'Export pour le comptable' };
   $('#view').innerHTML = views[route.name]();
   renderChrome(route);
-  document.body.classList.toggle('fit', route.name === 'dash' || route.name === 'export'); // ordinateur : l'écran principal tient dans la fenêtre
+  document.body.classList.toggle('fit', route.name === 'dash' || route.name === 'export' || route.name === 'ca' || route.name === 'frais'); // ordinateur : l'écran principal tient dans la fenêtre
   document.title = `${titles[route.name]} — CrMedic`;
   const target = route.section && $(`#sec-${route.section}`);
   if (target) target.scrollIntoView({ block: 'start' });
@@ -509,7 +509,9 @@ function dashView() {
 // ---------- Saisie ----------
 function saisieView(panel) {
   const head = panel === 'ca' ? mobileHead(longDate(today()), 'CA du jour') : mobileHead('Justificatif', 'Ajouter un frais');
-  return `<div class="page">${head}<div class="saisie" data-panel="${panel}">
+  return `<div class="page saisie-page">${head}
+    <div class="page-head"><h1>Saisie du CA et des frais</h1><div class="muted">Enregistrez la journée et ses justificatifs</div></div>
+    <div class="saisie" data-panel="${panel}">
     <section class="panel panel-ca" id="panel-ca" aria-label="Saisie du CA">${caPanel()}</section>
     <section class="panel panel-frais" id="panel-frais" aria-label="Ajouter un frais">${expPanel()}</section></div></div>`;
 }
@@ -537,7 +539,7 @@ function caPanel() {
   const ms = periodStats(state, monthRange(start.getFullYear(), start.getMonth() + 1));
   return `
     <div class="panel-title"><span class="dot"></span><h2>Saisie du CA</h2></div>
-    <div class="stack gap-12">
+    <div class="stack gap-12 cal-wrap">
       <div class="cal-head">
         <button type="button" class="cal-nav" data-action="cal-prev" aria-label="Mois précédent">${svg('left', 18, 2.2)}</button>
         <div class="cal-title"><b>${esc(monthLabel(y, m))}</b><span>${eur(stats.ca)} sur ${stats.jours} jour${stats.jours > 1 ? 's' : ''} travaillé${stats.jours > 1 ? 's' : ''}</span></div>
