@@ -66,7 +66,7 @@ export function normalize(raw) {
   }
   if (raw.revenues && typeof raw.revenues === 'object') {
     for (const [iso, r] of Object.entries(raw.revenues)) {
-      if (isValidISO(iso) && r && isNum(r.amount) && r.amount > 0) {
+      if (isValidISO(iso) && r && isNum(r.amount) && r.amount >= 0) {
         base.revenues[iso] = { amount: r.amount, count: isNum(r.count) && r.count >= 0 ? Math.floor(r.count) : null };
       }
     }
@@ -103,7 +103,7 @@ export function newId() {
 /** Enregistre (ou remplace) le CA d'un jour. */
 export function setRevenue(state, iso, amount, count = null) {
   if (!isValidISO(iso)) throw new ValidationError('Date invalide.');
-  if (!isNum(amount) || amount <= 0) throw new ValidationError('Saisissez un montant supérieur à 0.');
+  if (!isNum(amount) || amount < 0) throw new ValidationError('Saisissez un montant positif ou nul.');
   if (count !== null && (!Number.isInteger(count) || count < 0)) throw new ValidationError('Nombre de consultations invalide.');
   return { ...state, revenues: { ...state.revenues, [iso]: { amount, count } } };
 }

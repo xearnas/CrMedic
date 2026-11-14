@@ -21,9 +21,10 @@ test('setRevenue remplace la saisie du même jour', () => {
   assert.equal(st.revenues['2026-10-29'].amount, 250);
 });
 
-test('setRevenue refuse montant nul, date invalide, compteur invalide', () => {
+test('setRevenue accepte un CA à 0, refuse montant négatif, date invalide, compteur invalide', () => {
   const st = s.emptyState();
-  assert.throws(() => s.setRevenue(st, '2026-10-29', 0), s.ValidationError);
+  assert.equal(s.setRevenue(st, '2026-10-29', 0).revenues['2026-10-29'].amount, 0);
+  assert.throws(() => s.setRevenue(st, '2026-10-29', -5), s.ValidationError);
   assert.throws(() => s.setRevenue(st, '2026-02-30', 10), s.ValidationError);
   assert.throws(() => s.setRevenue(st, '2026-10-29', 10, -1), s.ValidationError);
 });

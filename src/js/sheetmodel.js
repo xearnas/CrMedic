@@ -110,7 +110,7 @@ export function tablesToState(tables, base = null) {
     const iso = isoOf(r[0]);
     const amount = num(r[1]);
     const count = String(cell(r[2])).trim() === '' ? null : num(r[2]);
-    if (iso && amount !== null && amount > 0) revenues[iso] = { amount, count: count !== null && Number.isInteger(count) && count >= 0 ? count : null };
+    if (iso && amount !== null && amount >= 0) revenues[iso] = { amount, count: count !== null && Number.isInteger(count) && count >= 0 ? count : null };
     else ignored += 1;
   }
 
