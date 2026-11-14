@@ -365,7 +365,7 @@ function deskChart(tab, y, ovs) {
   const col = (w, k) => {
     const real = w.frais ? Math.round((w.fraisReel / w.frais) * 100) : 0;
     const tip = `Semaine ${w.week} · ${short(w.from)} – ${short(w.to)} ${yearOf[k]} : CA ${eur(w.ca)}, frais ${eur(w.fraisReel)}${w.fraisPrevu ? ` + ${eur(w.fraisPrevu)} prévus` : ''}`;
-    return `<div class="d-col ${todayIso >= w.from && todayIso <= w.to ? 'is-now' : ''}" title="${esc(tip)}">
+    return `<div class="d-col ${todayIso >= w.from && todayIso <= w.to ? 'is-now' : ''}" data-tip="week" data-from="${w.from}" data-to="${w.to}" data-n="${w.week}" aria-label="${esc(tip)}">
       <div class="bar ${w.ca ? '' : 'zero'}" style="height:${(w.ca / top) * 100}%"></div>
       <div class="bar cost ${w.frais ? '' : 'zero'} ${w.fraisPrevu ? 'proj' : ''}" style="height:${(w.frais / top) * 100}%;--real:${real}%"></div></div>`;
   };
@@ -430,7 +430,7 @@ function deskMonth(y, mo) {
       ${mk('Solde CA − frais', eur(ms.solde), 'avant charges et impôts', 'accent')}
     </div>
     <div class="card d-daily"><div class="card-title">CA par jour</div>
-      <div class="bars" role="img" aria-label="CA par jour du mois, total ${eur(ms.ca)}">${daily.map((v, i) => `<div class="bar-col" title="${i + 1} : ${eur(v)}"><div class="bar ${v ? '' : 'zero'}" style="height:${Math.round((v / maxDay) * 100)}%"></div></div>`).join('')}</div></div>
+      <div class="bars" role="img" aria-label="CA par jour du mois, total ${eur(ms.ca)}">${daily.map((v, i) => `<div class="bar-col" data-tip="day" data-from="${toISO(y, mo, i + 1)}" data-to="${toISO(y, mo, i + 1)}"><div class="bar ${v ? '' : 'zero'}" style="height:${Math.round((v / maxDay) * 100)}%"></div></div>`).join('')}</div></div>
     <div class="card d-cats"><div class="card-title">Frais par catégorie</div>${categoryBars(cats)}</div>
     <div class="card d-recent"><div class="card-title">Dernières saisies</div><div class="list">${recent.length ? recent.map(recentItem).join('') : '<p class="muted">Rien pour l\'instant.</p>'}</div></div>
   </aside>`;
@@ -1076,6 +1076,57 @@ function moveMonth(delta) {
   renderCA();
   $(`[data-action="${delta < 0 ? 'cal-prev' : 'cal-next'}"]`)?.focus();
 }
+
+// ---------- Infobulle détaillée des graphiques (jour par jour) ----------
+function tipHtml(from, to, kind, n) {
+  const days = [];
+  for (let t = Date.parse(from + 'T00:00:00Z'); t <= Date.parse(to + 'T00:00:00Z'); t += 86400000) days.push(new Date(t).toISOString().slice(0, 10));
+  const exps = expandExpenses(state, to).filter((e) => e.date >= from && e.date <= to);
+  let ca = 0, fr = 0;
+  const rows = days.map((iso) => {
+    const r = state.revenues[iso];
+    const es = exps.filter((e) => e.date === iso);
+    ca += r?.amount ?? 0;
+    fr += es.reduce((t, e) => t + e.amount, 0);
+    const name = new Date(iso + 'T00:00:00Z').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    const fraisLines = es.map((e) => `<div class="tip-sub cost">${iso > today() ? '(prévu) ' : ''}${esc(e.category)}${e.note ? ` · ${esc(e.note)}` : ''}<b>− ${eur(e.amount)}</b></div>`).join('');
+    return `<div class="tip-row ${r || es.length ? '' : 'none'}"><span>${esc(name)}</span><b>${r ? eur(r.amount) : '—'}</b></div>${fraisLines}`;
+  }).join('');
+  const title = kind === 'week' ? `Semaine ${n}` : 'Détail du jour';
+  const sub = kind === 'week' ? `<span>${esc(new Date(from + 'T00:00:00Z').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' }))} – ${esc(new Date(to + 'T00:00:00Z').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }))}</span>` : '';
+  return `<div class="tip-head"><b>${esc(title)}</b>${sub}</div>${rows}
+    <div class="tip-sum"><span>CA</span><b>${eur(ca)}</b></div><div class="tip-sum cost"><span>Frais</span><b>${eur(fr)}</b></div>`;
+}
+
+function showTip(el, ev) {
+  let tip = document.getElementById('chart-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'chart-tip';
+    tip.setAttribute('role', 'tooltip');
+    document.body.append(tip);
+  }
+  if (tip.dataset.key !== `${el.dataset.from}${el.dataset.to}`) {
+    tip.innerHTML = tipHtml(el.dataset.from, el.dataset.to, el.dataset.tip, el.dataset.n);
+    tip.dataset.key = `${el.dataset.from}${el.dataset.to}`;
+  }
+  tip.hidden = false;
+  const w = tip.offsetWidth;
+  const h = tip.offsetHeight;
+  const x = ev.clientX + 16 + w > innerWidth - 8 ? ev.clientX - 16 - w : ev.clientX + 16;
+  const y = Math.max(8, Math.min(ev.clientY - 12, innerHeight - h - 8));
+  tip.style.transform = `translate(${Math.max(8, x)}px, ${y}px)`;
+}
+
+document.addEventListener('mousemove', (ev) => {
+  const el = ev.target.closest?.('[data-tip]');
+  if (el) showTip(el, ev);
+  else {
+    const tip = document.getElementById('chart-tip');
+    if (tip) tip.hidden = true;
+  }
+});
+document.addEventListener('mouseleave', () => { const tip = document.getElementById('chart-tip'); if (tip) tip.hidden = true; });
 
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-action]');

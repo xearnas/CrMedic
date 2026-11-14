@@ -529,3 +529,19 @@ body.modal-open { overflow: hidden; }
 @keyframes dlgIn { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
 @media (max-width: 480px) { .dlg-actions { flex-direction: column-reverse; } .dlg-actions .btn { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .dlg, .dlg-backdrop { animation: none; } }
+
+/* ---- Infobulle détaillée des graphiques ---- */
+#chart-tip { position: fixed; left: 0; top: 0; z-index: 60; width: 270px; pointer-events: none; background: #fff; border: 1px solid var(--line-strong, #C9D1CC); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 10px 12px; font-size: 13px; }
+#chart-tip[hidden] { display: none; }
+.tip-head { display: flex; flex-direction: column; margin-bottom: 6px; }
+.tip-head b { font-size: 14px; }
+.tip-head span { font-size: 12px; color: var(--muted); }
+.tip-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.tip-row span::first-letter { text-transform: uppercase; }
+.tip-row.none { color: var(--muted); }
+.tip-row b { font-variant-numeric: tabular-nums; }
+.tip-sub { display: flex; justify-content: space-between; gap: 10px; padding: 0 0 2px 10px; font-size: 12px; }
+.tip-sub.cost, .tip-sum.cost b { color: var(--cost); }
+.tip-sum { display: flex; justify-content: space-between; padding-top: 4px; font-weight: 600; }
+.tip-head + .tip-sum, .tip-row ~ .tip-sum:first-of-type { border-top: 1px solid var(--line); margin-top: 4px; }
+@media (hover: none) { #chart-tip { display: none; } }
