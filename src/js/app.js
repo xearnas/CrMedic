@@ -47,7 +47,7 @@ const start = new Date();
 const ui = {
   y: start.getFullYear(), m: start.getMonth() + 1, sel: todayISO(start),
   period: 'month', menu: false, cat: null, accent: null,
-  form: newProofForm(), edit: null, viewer: null, target: 'exp', expAll: false,
+  form: newProofForm(), yearTab: 'all', edit: null, viewer: null, target: 'exp', expAll: false,
   exp: { y: start.getFullYear(), period: 'year', sheet: 0 },
 };
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -213,6 +213,7 @@ function render() {
   const titles = { dash: 'Chiffres', ca: 'CA du jour', frais: 'Ajouter un frais', profil: 'Profil et réglages', export: 'Export pour le comptable' };
   $('#view').innerHTML = views[route.name]();
   renderChrome(route);
+  document.body.classList.toggle('fit', route.name === 'dash'); // ordinateur : l'écran principal tient dans la fenêtre
   document.title = `${titles[route.name]} — CrMedic`;
   const target = route.section && $(`#sec-${route.section}`);
   if (target) target.scrollIntoView({ block: 'start' });
@@ -302,36 +303,96 @@ function recentItem(r) {
     <div class="item-amount cost">− ${eur(r.amount)}</div></button>`;
 }
 
-/** Une année civile complète (ordinateur) : réalisée, en cours, ou prévisionnelle (frais récurrents à venir). */
-function yearBlock(yr, y, ov, max) {
-  const past = yr < y;
-  const future = yr > y;
-  const status = past ? 'Réalisé' : future ? 'Prévisionnel' : 'En cours';
-  const perMonth = ov.frais / 12;
-  const kpis = future
-    ? [kpi('Frais prévus', eur(ov.frais), 'frais récurrents à venir', { cost: true }), kpi('Moyenne par mois', eur(perMonth), 'frais récurrents uniquement', { cost: true })]
-    : [
-      kpi(past ? 'CA' : 'CA à ce jour', eur(ov.ca), `moy. ${eur(ov.ca / 12)} / mois`),
-      kpi(past ? 'Frais' : 'Frais de l\'année', eur(ov.frais), ov.fraisPrevu ? `dont ${eur(ov.fraisPrevu)} prévus (récurrents)` : `${pct(ov.frais, ov.ca)} du CA`, { cost: true }),
-      kpi(past ? 'Solde CA − frais' : 'Solde à ce jour', eur(ov.solde), ov.fraisPrevu ? `après les frais prévus : ${eur(ov.soldeProjete)}` : 'Avant charges sociales et impôts', { accent: true }),
-    ];
-  const bar = (m) => {
+// ---------- Écran principal (ordinateur) : tient dans la fenêtre, sans défilement ----------
+const YEAR_TABS = [['all', '3 années'], ['prev', 'Année précédente'], ['cur', 'Année actuelle'], ['next', 'Année suivante']];
+const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+
+const axisLabel = (v) => (v >= 1000 ? `${+(v / 1000).toFixed(1)} k` : String(Math.round(v)));
+
+/** Plafond de l'axe vertical : 4 graduations régulières et « rondes », au plus près du maximum. */
+function niceMax(v) {
+  const p = 10 ** Math.floor(Math.log10(v / 4));
+  return 4 * ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((x) => x * 4 >= v) ?? v / 4);
+}
+
+function deskChart(tab, y, ovs) {
+  const keys = tab === 'all' ? ['prev', 'cur', 'next'] : [tab];
+  const yearOf = { prev: y - 1, cur: y, next: y + 1 };
+  const all = ['prev', 'cur', 'next'].flatMap((k) => ovs[k].months.flatMap((m) => [m.ca, m.frais]));
+  const top = niceMax(Math.max(1, ...(tab === 'all' ? all : keys.flatMap((k) => ovs[k].months.flatMap((m) => [m.ca, m.frais])))));
+  const nowMonth = new Date().getMonth();
+  const col = (m, k, i) => {
     const real = m.frais ? Math.round((m.fraisReel / m.frais) * 100) : 0;
-    const tip = `${m.label} ${yr} : CA ${eur(m.ca)}, frais ${eur(m.fraisReel)}${m.fraisPrevu ? ` + ${eur(m.fraisPrevu)} prévus` : ''}`;
-    return `<div class="bar-col" title="${esc(tip)}">
-      ${future ? '' : `<div class="bar ${m.ca ? '' : 'zero'}" style="height:${Math.round((m.ca / max) * 100)}%"></div>`}
-      <div class="bar cost ${m.frais ? '' : 'zero'} ${m.fraisPrevu ? 'proj' : ''}" style="height:${Math.round((m.frais / max) * 100)}%;--real:${real}%"></div></div>`;
+    const tip = `${m.label} ${yearOf[k]} : CA ${eur(m.ca)}, frais ${eur(m.fraisReel)}${m.fraisPrevu ? ` + ${eur(m.fraisPrevu)} prévus` : ''}`;
+    return `<div class="d-col ${k === 'cur' && i === nowMonth ? 'is-now' : ''}" title="${esc(tip)}">
+      <div class="bar ${m.ca ? '' : 'zero'}" style="height:${(m.ca / top) * 100}%"></div>
+      <div class="bar cost ${m.frais ? '' : 'zero'} ${m.fraisPrevu ? 'proj' : ''}" style="height:${(m.frais / top) * 100}%;--real:${real}%"></div></div>`;
   };
-  return `<section class="period years3-block stack gap-14 only-desktop ${yr === y ? 'is-current' : ''}">
-    <h2 class="section-title">Année ${yr} <span class="year-tag ${past ? '' : future ? 'future' : 'now'}">${status}</span></h2>
-    <div class="kpis ${future ? 'kpis-2' : ''}">${kpis.join('')}</div>
-    <div class="card stack gap-14">
-      <div class="row" style="justify-content:space-between"><div class="card-title">${future ? 'Frais prévus par mois' : 'CA et frais par mois'}</div>
-        <div class="legend">${future ? '' : '<span><i class="dot"></i>CA</span>'}${future ? '' : '<span><i class="dot cost"></i>Frais</span>'}${ov.fraisPrevu ? '<span><i class="dot proj"></i>Frais prévus</span>' : ''}</div></div>
-      <div class="bars tall" role="img" aria-label="${future ? 'Frais prévus' : 'CA et frais'} par mois, année ${yr}">${ov.months.map(bar).join('')}</div>
-      <div class="axis-cols">${ov.months.map((m) => `<span>${m.label}</span>`).join('')}</div>
+  const labels = tab === 'all' ? MONTH_INITIALS : ovs[keys[0]].months.map((m) => m.label);
+  const yearTag = (k) => (k === 'cur' ? ' <em>en cours</em>' : k === 'next' ? ' <em class="fut">prévisionnel</em>' : '');
+  return `<div class="d-chart">
+    <div class="d-y">${[1, 0.75, 0.5, 0.25, 0].map((f) => `<span>${f ? axisLabel(top * f) : '0'}</span>`).join('')}</div>
+    <div class="d-area">
+      ${[0.25, 0.5, 0.75, 1].map((f) => `<i class="d-grid" style="bottom:${f * 100}%"></i>`).join('')}
+      <div class="d-groups">${keys.map((k) => `<div class="d-group">${ovs[k].months.map((m, i) => col(m, k, i)).join('')}</div>`).join('')}</div>
+    </div>
+    <div class="d-x">${keys.map(() => `<div class="d-group d-labels">${labels.map((l) => `<span>${l}</span>`).join('')}</div>`).join('')}</div>
+    ${tab === 'all' ? `<div class="d-x d-yrow">${keys.map((k) => `<div class="d-group"><b>${yearOf[k]}</b>${yearTag(k)}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function deskYears(y) {
+  const ovs = { prev: yearOverview(state, y - 1), cur: yearOverview(state, y), next: yearOverview(state, y + 1) };
+  const tab = ui.yearTab;
+  const yearOf = { prev: y - 1, cur: y, next: y + 1 };
+  const sum = (k) => {
+    const ov = ovs[k];
+    const head = `<div class="ysum-year">${yearOf[k]} <em class="${k === 'next' ? 'fut' : ''}">${{ prev: 'réalisé', cur: 'en cours', next: 'prévisionnel' }[k]}</em></div>`;
+    if (k === 'next') return `<div class="ysum">${head}<div class="ysum-vals"><span><i class="dot proj"></i>Frais prévus <b>${eur(ov.frais)}</b></span></div></div>`;
+    return `<div class="ysum">${head}<div class="ysum-vals"><span><i class="dot"></i>CA <b>${eur(ov.ca)}</b></span><span><i class="dot cost"></i>Frais <b>${eur(ov.frais)}</b></span>
+      <span>Solde <b>${eur(ov.solde)}</b></span></div>${ov.fraisPrevu ? `<div class="ysum-sub">dont ${eur(ov.fraisPrevu)} de frais prévus</div>` : ''}</div>`;
+  };
+  const one = (k) => {
+    const ov = ovs[k];
+    if (k === 'next') return [kpi('Frais prévus', eur(ov.frais), 'frais récurrents à venir', { cost: true }), kpi('Moyenne par mois', eur(ov.frais / 12), 'frais récurrents uniquement', { cost: true })];
+    return [
+      kpi(k === 'cur' ? 'CA à ce jour' : 'CA', eur(ov.ca), `moy. ${eur(ov.ca / 12)} / mois`),
+      kpi('Frais', eur(ov.frais), ov.fraisPrevu ? `dont ${eur(ov.fraisPrevu)} prévus (récurrents)` : `${pct(ov.frais, ov.ca)} du CA`, { cost: true }),
+      kpi(k === 'cur' ? 'Solde à ce jour' : 'Solde CA − frais', eur(ov.solde), ov.fraisPrevu ? `après frais prévus : ${eur(ov.soldeProjete)}` : 'Avant charges sociales et impôts', { accent: true }),
+    ];
+  };
+  const hasProj = ['prev', 'cur', 'next'].some((k) => ovs[k].fraisPrevu > 0);
+  return `<section class="card d-years" aria-label="Années">
+    <div class="d-sums ${tab === 'all' ? '' : 'd-kpis'}">${tab === 'all' ? ['prev', 'cur', 'next'].map(sum).join('') : one(tab).join('')}</div>
+    <div class="d-body">
+      <div class="ytabs" role="tablist" aria-label="Période du graphique">${YEAR_TABS.map(([id, label]) => `<button type="button" role="tab" class="ytab" data-action="set-year-tab" data-tab="${id}" aria-selected="${tab === id}">${label}${id === 'all' ? '' : `<small>${yearOf[{ prev: 'prev', cur: 'cur', next: 'next' }[id]]}</small>`}</button>`).join('')}</div>
+      <div class="d-chartbox">
+        <div class="legend"><span><i class="dot"></i>CA</span><span><i class="dot cost"></i>Frais</span>${hasProj ? '<span><i class="dot proj"></i>Frais prévus</span>' : ''}</div>
+        ${deskChart(tab, y, ovs)}
+      </div>
     </div>
   </section>`;
+}
+
+function deskMonth(y, mo) {
+  const ms = periodStats(state, monthRange(y, mo));
+  const daily = dailySeries(state, y, mo);
+  const maxDay = Math.max(1, ...daily);
+  const cats = categoryTotals(state, monthRange(y, mo)).slice(0, 3);
+  const recent = recentEntries(state, 3);
+  const mk = (label, value, sub, cls = '') => `<div class="mk ${cls}"><div class="mk-l">${label}</div><div class="mk-v">${value}</div><div class="mk-s">${sub}</div></div>`;
+  return `<aside class="d-month" aria-label="Mois en cours">
+    <h2 class="section-title">${esc(monthLabel(y, mo))}</h2>
+    <div class="mks">
+      ${mk('Chiffre d\'affaires', eur(ms.ca), `${ms.jours} j travaillé${ms.jours > 1 ? 's' : ''} · moy. ${eur(ms.moyJour)}`)}
+      ${mk('Frais', eur(ms.frais), `${ms.nbFrais} ligne${ms.nbFrais > 1 ? 's' : ''} · ${pct(ms.frais, ms.ca)} du CA`, 'cost')}
+      ${mk('Solde CA − frais', eur(ms.solde), 'avant charges et impôts', 'accent')}
+    </div>
+    <div class="card d-daily"><div class="card-title">CA par jour</div>
+      <div class="bars" role="img" aria-label="CA par jour du mois, total ${eur(ms.ca)}">${daily.map((v, i) => `<div class="bar-col" title="${i + 1} : ${eur(v)}"><div class="bar ${v ? '' : 'zero'}" style="height:${Math.round((v / maxDay) * 100)}%"></div></div>`).join('')}</div></div>
+    <div class="card d-cats"><div class="card-title">Frais par catégorie</div>${categoryBars(cats)}</div>
+    <div class="card d-recent"><div class="card-title">Dernières saisies</div><div class="list">${recent.length ? recent.map(recentItem).join('') : '<p class="muted">Rien pour l\'instant.</p>'}</div></div>
+  </aside>`;
 }
 
 function dashView() {
@@ -348,18 +409,17 @@ function dashView() {
   const monthName = monthLabel(y, mo);
   const yearTitle = `Année ${y} (${mo === 1 ? 'janvier' : `janvier – ${monthLabel(y, mo).split(' ')[0].toLowerCase()}`})`;
   const recent = recentEntries(state, 5);
-  const years = [y - 1, y, y + 1].map((yr) => [yr, yearOverview(state, yr)]);
-  const maxYear = Math.max(1, ...years.flatMap(([, ov]) => ov.months.flatMap((m) => [m.ca, m.frais])));
 
   return `<div class="page dash" data-period="${ui.period}">
     ${mobileHead(ui.period === 'month' ? monthName : `Janvier – ${monthName.split(' ')[0].toLowerCase()} ${y}`, 'Chiffres')}
     <div class="page-head"><h1>Vue d'ensemble</h1><div class="muted">Mise à jour ${esc(longDate(today()).toLowerCase())} ${y}</div></div>
+    <div class="desk only-desktop">${deskYears(y)}${deskMonth(y, mo)}</div>
     <div class="seg" role="group" aria-label="Période">
       <button type="button" data-action="set-period" data-period="month" aria-pressed="${ui.period === 'month'}">${esc(monthName.split(' ')[0])}</button>
       <button type="button" data-action="set-period" data-period="year" aria-pressed="${ui.period === 'year'}">Année ${y}</button>
     </div>
 
-    <section class="period period-month stack gap-14">
+    <section class="period period-month stack gap-14 only-mobile">
       <h2 class="section-title">${esc(monthName)}</h2>
       <div class="kpis">
         ${kpi('Chiffre d\'affaires', eur(ms.ca), `${ms.jours} jour${ms.jours > 1 ? 's' : ''} travaillé${ms.jours > 1 ? 's' : ''} · moy. ${eur(ms.moyJour)} / jour`)}
@@ -377,8 +437,6 @@ function dashView() {
         <div class="card chart-side stack gap-14"><div class="card-title">Frais par catégorie</div>${categoryBars(categoryTotals(state, monthRange(y, mo)))}</div>
       </div>
     </section>
-
-    ${years.map(([yr, ov]) => yearBlock(yr, y, ov, maxYear)).join('')}
 
     <section class="period period-year stack gap-14 only-mobile">
       <h2 class="section-title">${esc(yearTitle)}</h2>
@@ -400,7 +458,7 @@ function dashView() {
       <div class="card stack gap-14 only-mobile"><div class="card-title">Frais par catégorie</div>${categoryBars(categoryTotals(state, yearRange(y, mo)))}</div>
     </section>
 
-    <section class="card">
+    <section class="card only-mobile">
       <div class="card-title" style="margin-bottom:8px">Dernières saisies</div>
       <div class="list">${recent.length ? recent.map(recentItem).join('') : '<p class="muted" style="padding-top:8px">Rien pour l\'instant.</p>'}</div>
     </section>
@@ -856,6 +914,7 @@ const newDocId = () => 'd' + Date.now().toString(36) + Math.random().toString(36
 
 const actions = {
   'toggle-menu': () => { ui.menu = !ui.menu; renderChrome(); if (ui.menu) $('.menu a')?.focus(); },
+  'set-year-tab': (el) => { ui.yearTab = el.dataset.tab; render(); },
   'set-period': (el) => {
     ui.period = el.dataset.period;
     $('.dash').dataset.period = ui.period;
