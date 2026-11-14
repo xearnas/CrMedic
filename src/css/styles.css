@@ -545,3 +545,10 @@ body.modal-open { overflow: hidden; }
 .tip-sum { display: flex; justify-content: space-between; padding-top: 4px; font-weight: 600; }
 .tip-head + .tip-sum, .tip-row ~ .tip-sum:first-of-type { border-top: 1px solid var(--line); margin-top: 4px; }
 @media (hover: none) { #chart-tip { display: none; } }
+
+/* Colonne survolée grisée */
+@media (hover: hover) {
+  .d-col:hover, .d-daily .bar-col:hover { background: rgba(60, 70, 66, .13); }
+  .d-col:hover { border-radius: 0; }
+  .d-daily .bar-col:hover { border-radius: 4px 4px 0 0; }
+}
