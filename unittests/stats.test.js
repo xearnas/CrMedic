@@ -70,3 +70,32 @@ test('recentEntries : CA et frais mélangés, récents d’abord, limités', () 
   assert.ok(r.every((x, i) => i === 0 || r[i - 1].date >= x.date));
   assert.equal(r[0].kind, 'ca');
 });
+
+test('année complète : réalisé / prévu, les échéances futures des frais récurrents sont projetées', () => {
+  let st = emptyState();
+  st = setRevenue(st, '2026-02-10', 1000, 5);
+  st = addExpense(st, { date: '2025-11-15', amount: 300, category: 'Autre', recur: { every: 'month', end: '' } }).state;
+  st = addExpense(st, { date: '2026-03-01', amount: 50, category: 'Autre' }).state;
+  const now = '2026-06-20';
+  const y25 = k.yearOverview(st, 2025, now);
+  assert.equal(y25.fraisReel, 600); // nov. + déc. 2025
+  assert.equal(y25.fraisPrevu, 0);
+  const y26 = k.yearOverview(st, 2026, now);
+  assert.equal(y26.months[1].ca, 1000);
+  assert.equal(y26.fraisReel, 300 * 6 + 50); // 15 janv. → 15 juin + le frais ponctuel
+  assert.equal(y26.fraisPrevu, 300 * 6); // 15 juil. → 15 déc.
+  assert.equal(y26.months[5].fraisReel, 300);
+  assert.equal(y26.months[6].fraisPrevu, 300);
+  assert.equal(y26.solde, 1000 - 1850);
+  assert.equal(y26.soldeProjete, 1000 - 1850 - 1800);
+  const y27 = k.yearOverview(st, 2027, now);
+  assert.equal(y27.ca, 0);
+  assert.equal(y27.fraisPrevu, 3600);
+  assert.equal(y27.fraisReel, 0);
+});
+
+test('les totaux « réels » (période, catégories) ne comptent toujours pas les échéances à venir', () => {
+  const { state } = addExpense(emptyState(), { date: '2026-01-15', amount: 300, category: 'Autre', recur: { every: 'month', end: '' } });
+  const upToNow = k.periodStats(state, { from: '2099-01-01', to: '2099-12-31' });
+  assert.equal(upToNow.frais, 0);
+});

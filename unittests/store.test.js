@@ -128,3 +128,13 @@ test('sampleState est déterministe, borné à aujourd’hui et sans week-end', 
     assert.ok(dow !== 0 && dow !== 6, d);
   }
 });
+
+test('nouvelles catégories par défaut, et ajout unique aux listes existantes (avant « Autre »)', () => {
+  assert.ok(['Mutuelle', 'Véhicule', 'Fonctionnement'].every((c) => s.DEFAULT_CATEGORIES.includes(c)));
+  assert.equal(s.DEFAULT_CATEGORIES.at(-1), 'Autre');
+  const old = { ...s.emptyState(), categories: ['Consommables', 'mutuelle', 'Autre'] };
+  const next = s.withCategories(old, s.CATEGORIES_ADDED_V2);
+  assert.deepEqual(next.categories, ['Consommables', 'mutuelle', 'Véhicule', 'Fonctionnement', 'Autre']);
+  assert.equal(s.withCategories(next, s.CATEGORIES_ADDED_V2), next); // rien à ajouter : même objet
+  assert.deepEqual(s.withCategories({ ...old, categories: ['X'] }, ['Y']).categories, ['X', 'Y']);
+});

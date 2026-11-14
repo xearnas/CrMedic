@@ -2,7 +2,9 @@
 import { daysInMonth, isValidISO, toISO, todayISO } from './format.js';
 
 export const STORAGE_KEY = 'crmedic.v1';
-export const DEFAULT_CATEGORIES = ['Consommables', 'Loyer & charges', 'Déplacements', 'Logiciels', 'Formation', 'Autre'];
+export const DEFAULT_CATEGORIES = ['Consommables', 'Loyer & charges', 'Déplacements', 'Logiciels', 'Formation', 'Mutuelle', 'Véhicule', 'Fonctionnement', 'Autre'];
+/** Catégories ajoutées aux listes déjà enregistrées (une seule fois, voir `withCategories`). */
+export const CATEGORIES_ADDED_V2 = ['Mutuelle', 'Véhicule', 'Fonctionnement'];
 export const ACCENTS = [
   { hex: '#0B6E8A', label: 'Bleu océan' },
   { hex: '#2E7D5B', label: 'Vert sapin' },
@@ -215,6 +217,17 @@ export function addCategory(state, name) {
 }
 
 /** Les frais déjà saisis conservent leur catégorie (affichée telle quelle). */
+/** Ajoute les catégories manquantes (sans tenir compte de la casse), avant « Autre » s'il existe. */
+export function withCategories(state, names) {
+  const have = new Set(state.categories.map((c) => c.toLowerCase()));
+  const add = names.filter((n) => !have.has(n.toLowerCase()));
+  if (!add.length) return state;
+  const i = state.categories.findIndex((c) => c === 'Autre');
+  const cats = [...state.categories];
+  cats.splice(i === -1 ? cats.length : i, 0, ...add);
+  return { ...state, categories: cats };
+}
+
 export function removeCategory(state, name) {
   return { ...state, categories: state.categories.filter((c) => c !== name) };
 }

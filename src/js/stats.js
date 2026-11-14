@@ -1,5 +1,5 @@
 // Calculs de synthèse (purs) pour le tableau de bord.
-import { MONTHS_SHORT, daysInMonth, toISO } from './format.js';
+import { MONTHS_SHORT, daysInMonth, toISO, todayISO } from './format.js';
 import { expandExpenses } from './store.js';
 
 export function monthRange(y, m) {
@@ -44,6 +44,26 @@ export function monthlySeries(state, y, upToMonth) {
     const { ca, frais } = periodStats(state, monthRange(y, i + 1));
     return { label: MONTHS_SHORT[i], ca, frais };
   });
+}
+
+/**
+ * Année civile complète, mois par mois, avec projection : les frais datés après `now` (échéances à venir des frais
+ * récurrents) sont comptés à part comme « prévus ». Le CA, lui, n'est jamais projeté.
+ */
+export function yearOverview(state, y, now = todayISO()) {
+  const range = yearRange(y);
+  const months = Array.from({ length: 12 }, (_, i) => ({ label: MONTHS_SHORT[i], ca: 0, fraisReel: 0, fraisPrevu: 0 }));
+  for (const [iso, r] of Object.entries(state.revenues)) if (inRange(iso, range)) months[Number(iso.slice(5, 7)) - 1].ca += r.amount;
+  for (const e of expandExpenses(state, range.to)) {
+    if (!inRange(e.date, range)) continue;
+    months[Number(e.date.slice(5, 7)) - 1][e.date > now ? 'fraisPrevu' : 'fraisReel'] += e.amount;
+  }
+  for (const m of months) m.frais = m.fraisReel + m.fraisPrevu;
+  const sum = (k) => months.reduce((t, m) => t + m[k], 0);
+  const ca = sum('ca');
+  const fraisReel = sum('fraisReel');
+  const fraisPrevu = sum('fraisPrevu');
+  return { months, ca, fraisReel, fraisPrevu, frais: fraisReel + fraisPrevu, solde: ca - fraisReel, soldeProjete: ca - fraisReel - fraisPrevu };
 }
 
 /** Frais cumulés par catégorie, du plus élevé au plus faible. */

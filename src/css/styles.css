@@ -410,3 +410,13 @@ body.modal-open { overflow: hidden; }
 .sync-badge:disabled { cursor: default; }
 .sync-badge.sync-synced { background: #E3F0E8; color: #1F5C3E; }
 .sync-badge.sync-off { background: #EEECE4; color: var(--ink-soft); }
+
+/* ---- Écran principal sur ordinateur : trois années complètes (précédente, en cours, suivante) ---- */
+@media (max-width: 860px) { .only-desktop { display: none !important; } }
+.year-tag { margin-left: 10px; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 10px; background: #EEECE4; color: var(--ink-soft); vertical-align: middle; }
+.year-tag.now { background: var(--accent); color: #fff; }
+.year-tag.future { background: #FFF1CC; color: #6B4B00; }
+.years3-block.is-current { border-left: 4px solid var(--accent); padding-left: 16px; }
+.kpis-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bar.cost.proj { background: linear-gradient(to top, var(--cost) var(--real, 0%), transparent var(--real, 0%)), repeating-linear-gradient(135deg, var(--cost) 0 3px, #F3D2B6 3px 7px); }
+.dot.proj { background: repeating-linear-gradient(135deg, var(--cost) 0 2px, #F3D2B6 2px 4px); }
