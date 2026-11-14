@@ -99,3 +99,25 @@ test('les totaux « réels » (période, catégories) ne comptent toujours pas l
   const upToNow = k.periodStats(state, { from: '2099-01-01', to: '2099-12-31' });
   assert.equal(upToNow.frais, 0);
 });
+
+test('weekBuckets : semaines lundi-dimanche tronquées aux bornes de l’année', () => {
+  const w = k.weekBuckets(2026);
+  assert.equal(w.length, 53);
+  assert.deepEqual([w[0].from, w[0].to, w[0].week], ['2026-01-01', '2026-01-04', 1]);
+  assert.deepEqual([w[1].from, w[1].to], ['2026-01-05', '2026-01-11']);
+  assert.deepEqual([w[52].from, w[52].to, w[52].week], ['2026-12-28', '2026-12-31', 53]);
+  assert.equal(w[0].monthStart, 0);
+});
+
+test('yearOverview : les semaines totalisent exactement les mois', () => {
+  let st = setRevenue(emptyState(), '2026-01-04', 100, 1);
+  st = setRevenue(st, '2026-01-05', 200, 1);
+  st = setRevenue(st, '2026-12-31', 50, 1);
+  st = addExpense(st, { date: '2026-03-10', amount: 70, category: 'Autre' }).state;
+  const ov = k.yearOverview(st, 2026, '2026-06-01');
+  assert.equal(ov.weeks[0].ca, 100);
+  assert.equal(ov.weeks[1].ca, 200);
+  assert.equal(ov.weeks[52].ca, 50);
+  assert.equal(ov.weeks.reduce((t, x) => t + x.ca, 0), ov.ca);
+  assert.equal(ov.weeks.reduce((t, x) => t + x.frais, 0), ov.frais);
+});

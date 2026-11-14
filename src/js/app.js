@@ -9,7 +9,7 @@ import {
 } from './store.js';
 import { categoryTotals, dailySeries, monthRange, monthlySeries, periodStats, recentEntries, yearOverview, yearRange } from './stats.js';
 import { downloadText, downscaleImage, formatSize, readText } from './img.js';
-import { MONTHS_FR } from './format.js';
+import { MONTHS_FR, MONTHS_SHORT } from './format.js';
 import { buildReport, periodOptions, reportFileName, resolvePeriod } from './report.js';
 import { downloadBinary, loadExcelJS, writeXlsx } from './xlsx.js';
 import * as auth from './auth.js';
@@ -359,26 +359,26 @@ function niceMax(v) {
 function deskChart(tab, y, ovs) {
   const keys = tab === 'all' ? ['prev', 'cur', 'next'] : [tab];
   const yearOf = { prev: y - 1, cur: y, next: y + 1 };
-  const all = ['prev', 'cur', 'next'].flatMap((k) => ovs[k].months.flatMap((m) => [m.ca, m.frais]));
-  const top = niceMax(Math.max(1, ...(tab === 'all' ? all : keys.flatMap((k) => ovs[k].months.flatMap((m) => [m.ca, m.frais])))));
-  const nowMonth = new Date().getMonth();
-  const col = (m, k, i) => {
-    const real = m.frais ? Math.round((m.fraisReel / m.frais) * 100) : 0;
-    const tip = `${m.label} ${yearOf[k]} : CA ${eur(m.ca)}, frais ${eur(m.fraisReel)}${m.fraisPrevu ? ` + ${eur(m.fraisPrevu)} prévus` : ''}`;
-    return `<div class="d-col ${k === 'cur' && i === nowMonth ? 'is-now' : ''}" title="${esc(tip)}">
-      <div class="bar ${m.ca ? '' : 'zero'}" style="height:${(m.ca / top) * 100}%"></div>
-      <div class="bar cost ${m.frais ? '' : 'zero'} ${m.fraisPrevu ? 'proj' : ''}" style="height:${(m.frais / top) * 100}%;--real:${real}%"></div></div>`;
+  const top = niceMax(Math.max(1, ...keys.flatMap((k) => ovs[k].weeks.flatMap((w) => [w.ca, w.frais]))));
+  const todayIso = today();
+  const short = (iso) => `${Number(iso.slice(8))} ${MONTHS_SHORT[Number(iso.slice(5, 7)) - 1].toLowerCase()}`;
+  const col = (w, k) => {
+    const real = w.frais ? Math.round((w.fraisReel / w.frais) * 100) : 0;
+    const tip = `Semaine ${w.week} · ${short(w.from)} – ${short(w.to)} ${yearOf[k]} : CA ${eur(w.ca)}, frais ${eur(w.fraisReel)}${w.fraisPrevu ? ` + ${eur(w.fraisPrevu)} prévus` : ''}`;
+    return `<div class="d-col ${todayIso >= w.from && todayIso <= w.to ? 'is-now' : ''}" title="${esc(tip)}">
+      <div class="bar ${w.ca ? '' : 'zero'}" style="height:${(w.ca / top) * 100}%"></div>
+      <div class="bar cost ${w.frais ? '' : 'zero'} ${w.fraisPrevu ? 'proj' : ''}" style="height:${(w.frais / top) * 100}%;--real:${real}%"></div></div>`;
   };
-  const labels = tab === 'all' ? MONTH_INITIALS : ovs[keys[0]].months.map((m) => m.label);
+  const label = (w) => `<span>${w.monthStart === null ? '' : tab === 'all' ? MONTH_INITIALS[w.monthStart] : MONTHS_SHORT[w.monthStart]}</span>`;
   const yearTag = (k) => (k === 'cur' ? ' <em>en cours</em>' : k === 'next' ? ' <em class="fut">prévisionnel</em>' : '');
-  return `<div class="d-chart">
+  return `<div class="d-chart d-weeks">
     <div class="d-y">${[1, 0.75, 0.5, 0.25, 0].map((f) => `<span>${f ? axisLabel(top * f) : '0'}</span>`).join('')}</div>
     <div class="d-area">
       ${[0.25, 0.5, 0.75, 1].map((f) => `<i class="d-grid" style="bottom:${f * 100}%"></i>`).join('')}
-      <div class="d-groups">${keys.map((k) => `<div class="d-group">${ovs[k].months.map((m, i) => col(m, k, i)).join('')}</div>`).join('')}</div>
+      <div class="d-groups">${keys.map((k) => `<div class="d-group" style="flex-grow:${ovs[k].weeks.length}">${ovs[k].weeks.map((w) => col(w, k)).join('')}</div>`).join('')}</div>
     </div>
-    <div class="d-x">${keys.map(() => `<div class="d-group d-labels">${labels.map((l) => `<span>${l}</span>`).join('')}</div>`).join('')}</div>
-    ${tab === 'all' ? `<div class="d-x d-yrow">${keys.map((k) => `<div class="d-group"><b>${yearOf[k]}</b>${yearTag(k)}</div>`).join('')}</div>` : ''}
+    <div class="d-x">${keys.map((k) => `<div class="d-group d-labels" style="flex-grow:${ovs[k].weeks.length}">${ovs[k].weeks.map(label).join('')}</div>`).join('')}</div>
+    ${tab === 'all' ? `<div class="d-x d-yrow">${keys.map((k) => `<div class="d-group" style="flex-grow:${ovs[k].weeks.length}"><b>${yearOf[k]}</b>${yearTag(k)}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 

@@ -46,24 +46,65 @@ export function monthlySeries(state, y, upToMonth) {
   });
 }
 
+const DAY = 86400000;
+const utc = (y, m, d) => Date.UTC(y, m - 1, d);
+
+/** Rang (0 = semaine du 1er janvier, qui peut être partielle) de la semaine, du lundi au dimanche, qui contient `iso`. */
+function weekIndex(y, iso) {
+  const jan1 = (new Date(utc(y, 1, 1)).getUTCDay() + 6) % 7; // 0 = lundi
+  const doy = Math.round((utc(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)), Number(iso.slice(8, 10))) - utc(y, 1, 1)) / DAY);
+  return Math.floor((doy + jan1) / 7);
+}
+
+/** Numéro de semaine ISO 8601 du jour donné. */
+function isoWeekNumber(t) {
+  const d = new Date(t);
+  const dow = (d.getUTCDay() + 6) % 7;
+  const thursday = t + (3 - dow) * DAY;
+  const y = new Date(thursday).getUTCFullYear();
+  return Math.floor((thursday - utc(y, 1, 1)) / DAY / 7) + 1;
+}
+
+/** Les semaines (lundi-dimanche) de l'année civile `y`, tronquées au 1er janvier et au 31 décembre. */
+export function weekBuckets(y) {
+  const n = weekIndex(y, toISO(y, 12, 31)) + 1;
+  const jan1 = (new Date(utc(y, 1, 1)).getUTCDay() + 6) % 7;
+  return Array.from({ length: n }, (_, i) => {
+    const start = Math.max(utc(y, 1, 1), utc(y, 1, 1) + (i * 7 - jan1) * DAY);
+    const end = Math.min(utc(y, 12, 31), utc(y, 1, 1) + (i * 7 - jan1 + 6) * DAY);
+    const iso = (t) => new Date(t).toISOString().slice(0, 10);
+    let monthStart = null;
+    for (let t = start; t <= end; t += DAY) if (new Date(t).getUTCDate() === 1) monthStart = new Date(t).getUTCMonth();
+    return { week: isoWeekNumber(start), from: iso(start), to: iso(end), monthStart, ca: 0, fraisReel: 0, fraisPrevu: 0, frais: 0 };
+  });
+}
+
 /**
  * Année civile complète, mois par mois, avec projection : les frais datés après `now` (échéances à venir des frais
  * récurrents) sont comptés à part comme « prévus ». Le CA, lui, n'est jamais projeté.
  */
 export function yearOverview(state, y, now = todayISO()) {
   const range = yearRange(y);
+  const weeks = weekBuckets(y);
+  const weekOf = (iso) => weeks[weekIndex(y, iso)];
   const months = Array.from({ length: 12 }, (_, i) => ({ label: MONTHS_SHORT[i], ca: 0, fraisReel: 0, fraisPrevu: 0 }));
-  for (const [iso, r] of Object.entries(state.revenues)) if (inRange(iso, range)) months[Number(iso.slice(5, 7)) - 1].ca += r.amount;
+  for (const [iso, r] of Object.entries(state.revenues)) {
+    if (!inRange(iso, range)) continue;
+    months[Number(iso.slice(5, 7)) - 1].ca += r.amount;
+    weekOf(iso).ca += r.amount;
+  }
   for (const e of expandExpenses(state, range.to)) {
     if (!inRange(e.date, range)) continue;
-    months[Number(e.date.slice(5, 7)) - 1][e.date > now ? 'fraisPrevu' : 'fraisReel'] += e.amount;
+    const k = e.date > now ? 'fraisPrevu' : 'fraisReel';
+    months[Number(e.date.slice(5, 7)) - 1][k] += e.amount;
+    weekOf(e.date)[k] += e.amount;
   }
-  for (const m of months) m.frais = m.fraisReel + m.fraisPrevu;
+  for (const m of [...months, ...weeks]) m.frais = m.fraisReel + m.fraisPrevu;
   const sum = (k) => months.reduce((t, m) => t + m[k], 0);
   const ca = sum('ca');
   const fraisReel = sum('fraisReel');
   const fraisPrevu = sum('fraisPrevu');
-  return { months, ca, fraisReel, fraisPrevu, frais: fraisReel + fraisPrevu, solde: ca - fraisReel, soldeProjete: ca - fraisReel - fraisPrevu };
+  return { months, weeks, ca, fraisReel, fraisPrevu, frais: fraisReel + fraisPrevu, solde: ca - fraisReel, soldeProjete: ca - fraisReel - fraisPrevu };
 }
 
 /** Frais cumulés par catégorie, du plus élevé au plus faible. */

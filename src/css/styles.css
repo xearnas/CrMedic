@@ -477,6 +477,11 @@ body.modal-open { overflow: hidden; }
   .d-col .bar { width: 46%; max-width: 14px; border-radius: 3px 3px 0 0; }
   .d-x { grid-column: 2; display: flex; gap: 16px; margin-top: 4px; }
   .d-labels span { flex: 1 1 0; text-align: center; font-size: 11px; color: var(--muted); }
+  .d-weeks .d-group { gap: 0; }
+  .d-weeks .d-col { gap: 0; border-radius: 0; }
+  .d-weeks .d-col .bar { width: 44%; max-width: none; border-radius: 1px 1px 0 0; }
+  .d-weeks .d-col .bar.cost { width: 44%; }
+  .d-weeks .d-labels span { text-align: left; overflow: visible; white-space: nowrap; }
   .d-yrow { margin-top: 2px; }
   .d-yrow .d-group { justify-content: center; align-items: center; font-size: 13px; }
 
