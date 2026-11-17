@@ -436,6 +436,31 @@ function deskMonth(y, mo) {
   </aside>`;
 }
 
+/** Téléphone : mêmes vues d'années que sur ordinateur, tout sur un seul écran (chiffres, onglets, graphique par semaine, mois en cours). */
+function mobileDash(y, mo, ms) {
+  const ovs = { prev: yearOverview(state, y - 1), cur: yearOverview(state, y), next: yearOverview(state, y + 1) };
+  const tab = ui.yearTab;
+  const yearOf = { prev: y - 1, cur: y, next: y + 1 };
+  const stat = (label, value, cls = '') => `<div class="m-stat ${cls}"><span>${label}</span><b>${value}</b></div>`;
+  const stats = tab === 'all'
+    ? [stat(`CA ${y}`, eur(ovs.cur.ca)), stat(`Frais ${y}`, eur(ovs.cur.frais), 'cost'), stat('Solde', eur(ovs.cur.solde), 'accent')]
+    : tab === 'next'
+      ? [stat('Frais prévus', eur(ovs.next.frais), 'cost'), stat('Moy. / mois', eur(ovs.next.frais / 12), 'cost')]
+      : [stat(tab === 'cur' ? 'CA à ce jour' : 'CA', eur(ovs[tab].ca)), stat('Frais', eur(ovs[tab].frais), 'cost'), stat('Solde', eur(ovs[tab].solde), 'accent')];
+  const labels = { all: '3 ans', prev: yearOf.prev, cur: yearOf.cur, next: yearOf.next };
+  const hasProj = ['prev', 'cur', 'next'].some((k) => ovs[k].fraisPrevu > 0);
+  return `<section class="mdash only-mobile" aria-label="Années">
+    <div class="m-stats">${stats.join('')}</div>
+    <div class="m-tabs" role="tablist" aria-label="Période du graphique">${YEAR_TABS.map(([id]) => `<button type="button" role="tab" class="m-tab" data-action="set-year-tab" data-tab="${id}" aria-selected="${tab === id}">${labels[id]}</button>`).join('')}</div>
+    <div class="card d-chartbox m-chart">
+      <div class="legend"><span><i class="dot"></i>CA</span><span><i class="dot cost"></i>Frais</span>${hasProj ? '<span><i class="dot proj"></i>Prévus</span>' : ''}<span class="m-hint">Touchez le graphique pour le détail</span></div>
+      ${deskChart(tab, y, ovs)}
+    </div>
+    <div class="m-month"><div class="m-month-t">${esc(monthLabel(y, mo))}</div>
+      <div><span>CA</span><b>${eur(ms.ca)}</b></div><div class="cost"><span>Frais</span><b>${eur(ms.frais)}</b></div><div class="acc"><span>Solde</span><b>${eur(ms.solde)}</b></div></div>
+  </section>`;
+}
+
 function dashView() {
   const n = new Date();
   const y = n.getFullYear();
@@ -455,54 +480,7 @@ function dashView() {
     ${mobileHead(ui.period === 'month' ? monthName : `Janvier – ${monthName.split(' ')[0].toLowerCase()} ${y}`, 'Chiffres')}
     <div class="page-head"><h1>Vue d'ensemble</h1><div class="muted">Mise à jour ${esc(longDate(today()).toLowerCase())} ${y}</div></div>
     <div class="desk only-desktop">${deskYears(y)}${deskMonth(y, mo)}</div>
-    <div class="seg" role="group" aria-label="Période">
-      <button type="button" data-action="set-period" data-period="month" aria-pressed="${ui.period === 'month'}">${esc(monthName.split(' ')[0])}</button>
-      <button type="button" data-action="set-period" data-period="year" aria-pressed="${ui.period === 'year'}">Année ${y}</button>
-    </div>
-
-    <section class="period period-month stack gap-14 only-mobile">
-      <h2 class="section-title">${esc(monthName)}</h2>
-      <div class="kpis">
-        ${kpi('Chiffre d\'affaires', eur(ms.ca), `${ms.jours} jour${ms.jours > 1 ? 's' : ''} travaillé${ms.jours > 1 ? 's' : ''} · moy. ${eur(ms.moyJour)} / jour`)}
-        ${kpi('Frais déclarés', eur(ms.frais), `${ms.nbFrais} justificatif${ms.nbFrais > 1 ? 's' : ''} · ${pct(ms.frais, ms.ca)} du CA`, { cost: true })}
-        ${kpi('Solde CA − frais', eur(ms.solde), 'Avant charges sociales et impôts', { accent: true })}
-      </div>
-      <div class="charts">
-        <div class="card chart-main stack gap-14">
-          <div class="card-title">CA par jour</div>
-          <div class="bars" role="img" aria-label="CA par jour du mois, total ${eur(ms.ca)}">
-            ${daily.map((v, i) => `<div class="bar-col" title="${i + 1} : ${eur(v)}"><div class="bar ${v ? '' : 'zero'}" style="height:${Math.round((v / maxDay) * 100)}%"></div></div>`).join('')}
-          </div>
-          <div class="axis"><span>1</span><span>8</span><span>15</span><span>22</span><span>${nDays}</span></div>
-        </div>
-        <div class="card chart-side stack gap-14"><div class="card-title">Frais par catégorie</div>${categoryBars(categoryTotals(state, monthRange(y, mo)))}</div>
-      </div>
-    </section>
-
-    <section class="period period-year stack gap-14 only-mobile">
-      <h2 class="section-title">${esc(yearTitle)}</h2>
-      <div class="kpis">
-        ${kpi('CA cumulé', eur(ys.ca), `moy. ${eur(ys.ca / mo)} / mois`)}
-        ${kpi('Frais cumulés', eur(ys.frais), `${pct(ys.frais, ys.ca)} du CA`, { cost: true })}
-        ${kpi('Solde CA − frais', eur(ys.solde), 'Avant charges sociales et impôts', { accent: true })}
-      </div>
-      <div class="card stack gap-14">
-        <div class="row" style="justify-content:space-between"><div class="card-title">CA et frais par mois</div>
-          <div class="legend"><span><i class="dot"></i>CA</span><span><i class="dot cost"></i>Frais</span></div></div>
-        <div class="bars tall" role="img" aria-label="CA et frais par mois, année ${y}">
-          ${months.map((x) => `<div class="bar-col" title="${x.label} : CA ${eur(x.ca)}, frais ${eur(x.frais)}">
-            <div class="bar ${x.ca ? '' : 'zero'}" style="height:${Math.round((x.ca / maxMonth) * 100)}%"></div>
-            <div class="bar cost ${x.frais ? '' : 'zero'}" style="height:${Math.round((x.frais / maxMonth) * 100)}%"></div></div>`).join('')}
-        </div>
-        <div class="axis-cols">${months.map((x) => `<span>${x.label}</span>`).join('')}</div>
-      </div>
-      <div class="card stack gap-14 only-mobile"><div class="card-title">Frais par catégorie</div>${categoryBars(categoryTotals(state, yearRange(y, mo)))}</div>
-    </section>
-
-    <section class="card only-mobile">
-      <div class="card-title" style="margin-bottom:8px">Dernières saisies</div>
-      <div class="list">${recent.length ? recent.map(recentItem).join('') : '<p class="muted" style="padding-top:8px">Rien pour l\'instant.</p>'}</div>
-    </section>
+    ${mobileDash(y, mo, ms)}
   </div>`;
 }
 
@@ -1115,7 +1093,7 @@ function showTip(el, ev) {
   tip.hidden = false;
   const w = tip.offsetWidth;
   const h = tip.offsetHeight;
-  const x = ev.clientX + 16 + w > innerWidth - 8 ? ev.clientX - 16 - w : ev.clientX + 16;
+  const x = ev.touch ? (ev.clientX < innerWidth / 2 ? innerWidth - w - 8 : 8) : ev.clientX + 16 + w > innerWidth - 8 ? ev.clientX - 16 - w : ev.clientX + 16;
   const y = Math.max(8, Math.min(ev.clientY - 12, innerHeight - h - 8));
   tip.style.transform = `translate(${Math.max(8, x)}px, ${y}px)`;
 }
@@ -1128,6 +1106,33 @@ document.addEventListener('mousemove', (ev) => {
     if (tip) tip.hidden = true;
   }
 });
+// Écran tactile : on balaie le graphique du doigt pour lire le détail de chaque semaine.
+let tipTimer = 0;
+function scrub(ev) {
+  const area = ev.target.closest?.('.d-area');
+  if (!area) return;
+  const t = ev.touches?.[0] ?? ev;
+  const cols = [...area.querySelectorAll('.d-col')];
+  const col = cols.find((c) => { const r = c.getBoundingClientRect(); return t.clientX >= r.left && t.clientX < r.right; });
+  document.querySelectorAll('.d-col.hot').forEach((c) => c.classList.remove('hot'));
+  if (!col) return;
+  col.classList.add('hot');
+  clearTimeout(tipTimer);
+  showTip(col, { clientX: t.clientX, clientY: area.getBoundingClientRect().top + 6, touch: true });
+}
+function endScrub() {
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => {
+    document.querySelectorAll('.d-col.hot').forEach((c) => c.classList.remove('hot'));
+    const tip = document.getElementById('chart-tip');
+    if (tip) tip.hidden = true;
+  }, 2500);
+}
+document.addEventListener('touchstart', scrub, { passive: true });
+document.addEventListener('touchmove', scrub, { passive: true });
+document.addEventListener('touchend', endScrub);
+document.addEventListener('touchcancel', endScrub);
+
 document.addEventListener('mouseleave', () => { const tip = document.getElementById('chart-tip'); if (tip) tip.hidden = true; });
 
 document.addEventListener('click', (ev) => {
