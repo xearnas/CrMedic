@@ -33,7 +33,7 @@ test('aller-retour état -> tables -> état (données d’exemple)', () => {
 
 test('la photo de profil et les images en attente restent locales ; les photos du Drive sont dans le classeur', () => {
   let s = updateProfile(emptyState(), { photo: 'data:image/jpeg;base64,AAAA' });
-  s = addExpense(s, { date: '2026-10-02', amount: 12.5, category: 'Autre', docs: [
+  s = addExpense(s, { date: '2026-10-02', amount: 12.5, category: 'Autres frais divers de gestion', docs: [
     { id: 'p1', name: 'ticket.jpg', size: 10, type: 'image/jpeg', dataUrl: 'data:x' },
     { id: 'p2', name: 'facture.jpg', size: 20, type: 'image/jpeg', driveId: 'DRV2' },
   ] }).state;
@@ -50,15 +50,15 @@ test('la photo de profil et les images en attente restent locales ; les photos d
 });
 
 test('une photo supprimée depuis un autre appareil disparaît ici aussi', () => {
-  let s = addExpense(emptyState(), { date: '2026-10-02', amount: 12.5, category: 'Autre', docs: [{ name: 'a.jpg', driveId: 'D1' }] }).state;
+  let s = addExpense(emptyState(), { date: '2026-10-02', amount: 12.5, category: 'Autres frais divers de gestion', docs: [{ name: 'a.jpg', driveId: 'D1' }] }).state;
   const tables = stateToTables(s, NOW);
   tables[TABS.docs] = [HEADERS[TABS.docs]];
   assert.deepEqual(tablesToState(tables, s).state.expenses[0].docs, []);
 });
 
 test('sans justificatif et récurrence font l’aller-retour', () => {
-  let s = addExpense(emptyState(), { date: '2026-10-02', amount: 300, category: 'Autre', note: 'Crédit voiture', noDoc: true, recur: { every: 'month', end: '2027-10-02' } }).state;
-  s = addExpense(s, { date: '2026-10-03', amount: 20, category: 'Autre', recur: { every: 'week', end: '' } }).state;
+  let s = addExpense(emptyState(), { date: '2026-10-02', amount: 300, category: 'Autres frais divers de gestion', note: 'Crédit voiture', noDoc: true, recur: { every: 'month', end: '2027-10-02' } }).state;
+  s = addExpense(s, { date: '2026-10-03', amount: 20, category: 'Autres frais divers de gestion', recur: { every: 'week', end: '' } }).state;
   const tables = stateToTables(s, NOW);
   assert.deepEqual(tables[TABS.frais][1].slice(6), ['oui', 'mois', '2027-10-02']);
   assert.deepEqual(tables[TABS.frais][2].slice(6), ['', 'semaine', '']);
@@ -70,7 +70,7 @@ test('sans justificatif et récurrence font l’aller-retour', () => {
 });
 
 test('un classeur créé avant ces colonnes (en-tête de 6 colonnes) reste lisible', () => {
-  const t = stateToTables(addExpense(emptyState(), { date: '2026-10-02', amount: 12.5, category: 'Autre' }).state, NOW);
+  const t = stateToTables(addExpense(emptyState(), { date: '2026-10-02', amount: 12.5, category: 'Autres frais divers de gestion' }).state, NOW);
   t[TABS.frais] = t[TABS.frais].map((r) => r.slice(0, 6));
   delete t[TABS.docs];
   const { state, ignored } = tablesToState(t, null);

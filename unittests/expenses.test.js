@@ -4,11 +4,11 @@ import { ValidationError, addExpense, emptyState, expandExpenses, normalize, occ
 import { categoryTotals, periodStats } from '../src/js/stats.js';
 import { buildReport, resolvePeriod } from '../src/js/report.js';
 
-const base = { amount: 300, category: 'Autre' };
+const base = { amount: 300, category: 'Autres frais divers de gestion' };
 const withRecur = (date, every, end = '') => addExpense(emptyState(), { ...base, date, recur: { every, end } }).expense;
 
 test('ancien format : un champ doc devient une liste docs, sans justificatif par défaut', () => {
-  const s = normalize({ expenses: [{ id: 'a', date: '2026-01-05', amount: 10, category: 'X', doc: { name: 't.jpg', dataUrl: 'data:x' } }, { id: 'b', date: '2026-01-06', amount: 5, category: 'X' }] });
+  const s = normalize({ expenses: [{ id: 'a', date: '2026-01-05', amount: 10, category: 'Achats', doc: { name: 't.jpg', dataUrl: 'data:x' } }, { id: 'b', date: '2026-01-06', amount: 5, category: 'Achats' }] });
   assert.equal(s.expenses[0].docs.length, 1);
   assert.equal(s.expenses[0].docs[0].name, 't.jpg');
   assert.ok(s.expenses[0].docs[0].id);
@@ -55,7 +55,7 @@ test('les échéances comptent dans les totaux, par période et par catégorie',
   assert.equal(expandExpenses(state, '2026-12-31').length, 3);
   assert.equal(periodStats(state, { from: '2026-02-01', to: '2026-02-28' }).frais, 300);
   assert.equal(periodStats(state, { from: '2026-01-01', to: '2026-12-31' }).frais, 900);
-  assert.deepEqual(categoryTotals(state, { from: '2026-01-01', to: '2026-12-31' }), [{ name: 'Autre', total: 900 }]);
+  assert.deepEqual(categoryTotals(state, { from: '2026-01-01', to: '2026-12-31' }), [{ name: 'Autres frais divers de gestion', total: 900 }]);
 });
 
 test('validation : fréquence, dates de fin', () => {

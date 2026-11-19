@@ -7,9 +7,10 @@
 //   f    formule Excel (noms de fonctions anglais, comme dans le fichier) ; v en est le résultat
 //   fmt  'text' | 'money' | 'int' | 'pct' | 'date' | 'month'
 //   kind 'title' | 'sub' | 'head' | 'total' | 'note'
-import { MONTHS_FR, WEEKDAYS_FR, daysInMonth, toISO } from './format.js';
+import { MONTHS_FR, WEEKDAYS_FR, daysInMonth, toISO, todayISO } from './format.js';
 import { categoryTotals, monthRange, periodStats } from './stats.js';
 import { expandExpenses } from './store.js';
+import { buildForms } from './forms.js';
 
 const RECUR_LABEL = { week: 'hebdomadaire', month: 'mensuel', year: 'annuel' };
 
@@ -166,6 +167,7 @@ export function buildReport(state, period) {
       { name: SHEET_SUMMARY, widths: [26, 16, 16, 16], rows: sumRows, freezeRow: 4 },
       { name: SHEET_CA, widths: [14, 14, 16, 16], rows: caRows, freezeRow: 4 },
       { name: SHEET_EXPENSES, widths: [14, 24, 34, 28, 18], rows: exRows, freezeRow: 4 },
+      ...buildForms(state, y, { who, today: todayISO() }),
     ],
   };
 }

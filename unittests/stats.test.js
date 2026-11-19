@@ -9,10 +9,10 @@ function fixture() {
   st = setRevenue(st, '2026-10-01', 400, 14);
   st = setRevenue(st, '2026-10-02', 200, 7);
   st = setRevenue(st, '2026-11-01', 999, 1);
-  st = addExpense(st, { date: '2026-10-02', amount: 100, category: 'Consommables' }).state;
-  st = addExpense(st, { date: '2026-10-15', amount: 300, category: 'Loyer & charges' }).state;
-  st = addExpense(st, { date: '2026-10-20', amount: 50, category: 'Consommables' }).state;
-  st = addExpense(st, { date: '2026-09-01', amount: 77, category: 'Formation' }).state;
+  st = addExpense(st, { date: '2026-10-02', amount: 100, category: 'Achats' }).state;
+  st = addExpense(st, { date: '2026-10-15', amount: 300, category: 'Loyer et charges locatives' }).state;
+  st = addExpense(st, { date: '2026-10-20', amount: 50, category: 'Achats' }).state;
+  st = addExpense(st, { date: '2026-09-01', amount: 77, category: 'Autres frais divers de gestion' }).state;
   return st;
 }
 
@@ -58,8 +58,8 @@ test('monthlySeries : une entrée par mois jusqu’au mois demandé', () => {
 test('categoryTotals : cumul et tri décroissant', () => {
   const c = k.categoryTotals(fixture(), k.monthRange(2026, 10));
   assert.deepEqual(c, [
-    { name: 'Loyer & charges', total: 300 },
-    { name: 'Consommables', total: 150 },
+    { name: 'Loyer et charges locatives', total: 300 },
+    { name: 'Achats', total: 150 },
   ]);
 });
 
@@ -74,8 +74,8 @@ test('recentEntries : CA et frais mélangés, récents d’abord, limités', () 
 test('année complète : réalisé / prévu, les échéances futures des frais récurrents sont projetées', () => {
   let st = emptyState();
   st = setRevenue(st, '2026-02-10', 1000, 5);
-  st = addExpense(st, { date: '2025-11-15', amount: 300, category: 'Autre', recur: { every: 'month', end: '' } }).state;
-  st = addExpense(st, { date: '2026-03-01', amount: 50, category: 'Autre' }).state;
+  st = addExpense(st, { date: '2025-11-15', amount: 300, category: 'Autres frais divers de gestion', recur: { every: 'month', end: '' } }).state;
+  st = addExpense(st, { date: '2026-03-01', amount: 50, category: 'Autres frais divers de gestion' }).state;
   const now = '2026-06-20';
   const y25 = k.yearOverview(st, 2025, now);
   assert.equal(y25.fraisReel, 600); // nov. + déc. 2025
@@ -95,7 +95,7 @@ test('année complète : réalisé / prévu, les échéances futures des frais r
 });
 
 test('les totaux « réels » (période, catégories) ne comptent toujours pas les échéances à venir', () => {
-  const { state } = addExpense(emptyState(), { date: '2026-01-15', amount: 300, category: 'Autre', recur: { every: 'month', end: '' } });
+  const { state } = addExpense(emptyState(), { date: '2026-01-15', amount: 300, category: 'Autres frais divers de gestion', recur: { every: 'month', end: '' } });
   const upToNow = k.periodStats(state, { from: '2099-01-01', to: '2099-12-31' });
   assert.equal(upToNow.frais, 0);
 });
@@ -113,7 +113,7 @@ test('yearOverview : les semaines totalisent exactement les mois', () => {
   let st = setRevenue(emptyState(), '2026-01-04', 100, 1);
   st = setRevenue(st, '2026-01-05', 200, 1);
   st = setRevenue(st, '2026-12-31', 50, 1);
-  st = addExpense(st, { date: '2026-03-10', amount: 70, category: 'Autre' }).state;
+  st = addExpense(st, { date: '2026-03-10', amount: 70, category: 'Autres frais divers de gestion' }).state;
   const ov = k.yearOverview(st, 2026, '2026-06-01');
   assert.equal(ov.weeks[0].ca, 100);
   assert.equal(ov.weeks[1].ca, 200);

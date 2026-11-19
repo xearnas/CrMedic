@@ -12,7 +12,7 @@ HTML/CSS/JavaScript natif, **sans étape de build ni dépendance**.
 | CA (`#/ca`) | calendrier + formulaire, côte à côte avec les frais | page dédiée, grand champ de saisie |
 | Frais (`#/frais`) | formulaire (photos, récurrence) + liste cliquable des frais | page dédiée, bouton « Prendre une photo » (appareil photo) ; la fiche d'un frais s'ouvre en bas d'écran |
 | Export (`#/export`) | choix de la période + aperçu du classeur Excel + téléchargement | idem, aperçu défilant |
-| Profil (`#/profil`) | profil, couleur, catégories, compte Google, sauvegarde | idem, pleine largeur |
+| Profil (`#/profil`) | profil, couleur, catégories (liste fixe 2035), compte Google, sauvegarde | idem, pleine largeur |
 
 La navigation passe par la barre du haut sur PC et par une barre d'onglets en bas sur téléphone.
 
@@ -55,7 +55,8 @@ origines JavaScript autorisées de l'ID client Google.
   - ne pas modifier les en-têtes de colonnes du classeur : l'application refuse de le lire plutôt que de
     risquer d'écraser des données.
 - **Export pour le comptable** (`#/export`) : classeur `.xlsx` mis en forme (Synthèse mensuelle et par
-  catégorie, détail du CA, détail des frais), généré dans le navigateur avec ExcelJS (chargé à la demande
+  catégorie, détail du CA, détail des frais, plus deux feuilles d'aide au remplissage : **2035** et
+  **2042-C-PRO**), généré dans le navigateur avec ExcelJS (chargé à la demande
   depuis jsDelivr). Les totaux sont de vraies formules Excel. L'aperçu à l'écran vient du même modèle.
 - Sauvegarde manuelle : **Profil → Sauvegarde des données** (export/import JSON).
 - **Frais** : cliquer un frais (liste ou tableau de bord) ouvre sa fiche : modifier, ajouter / retirer des
@@ -96,6 +97,8 @@ src/js/sync.js        synchronisation local <-> classeur (dépendances injectée
 src/js/auth.js        connexion Google Identity Services (navigateur)
 src/js/config.js      ID client OAuth
 src/privacy.html      politique de confidentialité (exigée par Google pour publier l'application)
+src/js/categories.js  catégories de frais = lignes de la 2035-A, migration des anciennes catégories
+src/js/forms.js       feuilles « 2035 » et « 2042-C-PRO » de l'export
 src/js/img.js         réduction d'image, import/export de fichiers (navigateur)
 src/js/app.js         vues, routage, événements
 unittests/            tests unitaires (node:test)
@@ -106,3 +109,11 @@ unittests/            tests unitaires (node:test)
 ```bash
 ./unittests/run.sh   # Node >= 20, aucune dépendance
 ```
+
+## Catégories de frais et déclarations fiscales
+
+Les catégories de frais ne sont plus libres : ce sont les lignes de dépenses de la **2035-A** (`src/js/categories.js`).
+Les frais déjà saisis sont migrés au chargement (Consommables → Achats, Mutuelle → Mutuelle et prévoyance (Madelin),
+Véhicule → Frais de véhicules, etc.) ; une ancienne catégorie inconnue devient « Autres frais divers de gestion »
+et son nom est conservé dans la note. Les feuilles `2035` et `2042-C-PRO` de l'export portent toujours sur l'année
+entière. Numéros de ligne et de case : millésime 2026 (revenus 2025), à revérifier chaque année.

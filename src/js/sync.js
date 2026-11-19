@@ -6,6 +6,7 @@
 // s'il a changé depuis la dernière synchronisation (par exemple modifié depuis un autre appareil).
 import { SheetFormatError, TABS, planSync, tablesAreEmpty, tablesToState } from './sheetmodel.js';
 import { isEmpty } from './store.js';
+import { CATEGORY_NAMES } from './categories.js';
 import { DriveError } from './drive.js';
 
 /** Que faire au démarrage d'une session déjà connectée ? */
@@ -44,10 +45,7 @@ export function mergeLocalEdits(base, local, remote) {
     else expenses.delete(id);
   }
 
-  const categories = [...remote.categories];
-  for (const c of local.categories) if (!categories.includes(c)) categories.push(c);
-
-  return { ...remote, profile, revenues, expenses: [...expenses.values()], categories };
+  return { ...remote, profile, revenues, expenses: [...expenses.values()], categories: [...CATEGORY_NAMES] };
 }
 
 const majOf = (tables) => tables?.[TABS.meta]?.find((r) => r[0] === 'maj')?.[1] ?? '';

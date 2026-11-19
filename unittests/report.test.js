@@ -52,8 +52,8 @@ test('une ligne par mois de la période avec formules', () => {
 test('seules les opérations de la période figurent dans le détail', () => {
   let s = setRevenue(emptyState(), '2026-03-10', 300, 10);
   s = setRevenue(s, '2026-04-02', 500, 15);
-  s = addExpense(s, { date: '2026-03-11', amount: 40, category: 'Autre', note: 'a' }).state;
-  s = addExpense(s, { date: '2026-05-11', amount: 60, category: 'Autre', note: 'b' }).state;
+  s = addExpense(s, { date: '2026-03-11', amount: 40, category: 'Autres frais divers de gestion', note: 'a' }).state;
+  s = addExpense(s, { date: '2026-05-11', amount: 60, category: 'Autres frais divers de gestion', note: 'b' }).state;
   const rep = buildReport(s, resolvePeriod(2026, 'm3'));
   const ca = sheet(rep, 'CA').rows.filter((r) => r[0]?.fmt === 'date');
   const fr = sheet(rep, 'Frais').rows.filter((r) => r[0]?.fmt === 'date');
@@ -75,10 +75,84 @@ test('période sans donnée : tableaux valides, totaux nuls, plages de formules 
 
 test('la part de chaque catégorie somme à 100 %', () => {
   let state = sampleState(NOW);
-  state = addExpense(state, { date: '2026-03-02', amount: 120, category: 'Consommables' }).state;
-  state = addExpense(state, { date: '2026-04-02', amount: 80, category: 'Logiciels' }).state;
+  state = addExpense(state, { date: '2026-03-02', amount: 120, category: 'Achats' }).state;
+  state = addExpense(state, { date: '2026-04-02', amount: 80, category: 'Location de matériel et mobilier' }).state;
   const rep = buildReport(state, resolvePeriod(2026, 'year'));
   const rows = sheet(rep, 'Synthèse').rows.filter((r) => r[2]?.fmt === 'pct' && r[0].kind !== 'total');
   assert.ok(rows.length >= 2);
   assert.ok(Math.abs(rows.reduce((s, r) => s + r[2].v, 0) - 1) < 1e-9);
+});
+
+// --- Feuilles 2035 et 2042-C-PRO ---
+const lineOf = (sh, ligne) => sh.rows.find((r) => r[0]?.v === String(ligne) && r[0]?.kind !== 'head');
+const valueOf = (sh, ligne) => lineOf(sh, ligne)[2].v;
+
+function formsFixture() {
+  let s = emptyState();
+  s = setRevenue(s, '2026-02-03', 700, 20);
+  s = setRevenue(s, '2026-02-04', 800, 25);
+  s = setRevenue(s, '2025-12-31', 999, 1); // autre année : exclue
+  s = addExpense(s, { date: '2026-03-01', amount: 100, category: 'Achats' }).state;
+  s = addExpense(s, { date: '2026-03-02', amount: 300, category: 'Loyer et charges locatives' }).state;
+  s = addExpense(s, { date: '2026-03-03', amount: 200, category: 'Charges sociales personnelles' }).state;
+  s = addExpense(s, { date: '2026-03-04', amount: 50, category: 'Mutuelle et prévoyance (Madelin)' }).state;
+  s = addExpense(s, { date: '2026-03-05', amount: 120, category: 'Honoraires rétrocédés (remplaçant)' }).state;
+  s = addExpense(s, { date: '2025-03-05', amount: 77, category: 'Achats' }).state; // autre année : exclu
+  return s;
+}
+
+test('2035 : recettes, lignes de dépenses, totaux et résultat', () => {
+  const rep = buildReport(formsFixture(), resolvePeriod(2026, 'm2')); // période mensuelle : les formulaires restent annuels
+  const f = sheet(rep, '2035');
+  assert.ok(f);
+  assert.equal(valueOf(f, 1), 1500);
+  assert.equal(valueOf(f, 3), 120); // rétrocessions déduites des recettes
+  assert.equal(valueOf(f, 4), 1380);
+  assert.equal(valueOf(f, 7), 1380);
+  assert.equal(valueOf(f, 8), 100);
+  assert.equal(valueOf(f, 15), 300);
+  assert.equal(valueOf(f, 25), 250);
+  assert.equal(f.rows.find((r) => r[1]?.v.startsWith('dont obligatoires'))[2].v, 200);
+  assert.equal(f.rows.find((r) => r[1]?.v.startsWith('dont facultatives'))[2].v, 50);
+  assert.equal(valueOf(f, 11), 0); // TVA : à compléter
+  assert.equal(valueOf(f, 33), 650);
+  assert.equal(valueOf(f, 34), 730);
+  assert.equal(valueOf(f, 35), 0);
+  assert.equal(valueOf(f, 46), 730);
+  assert.equal(valueOf(f, 47), 0);
+  // les 25 lignes 8 à 32 sont toutes présentes, dans l'ordre
+  const nums = f.rows.map((r) => Number(r[0]?.v)).filter((n) => n >= 8 && n <= 32);
+  assert.deepEqual(nums, Array.from({ length: 25 }, (_, i) => i + 8));
+});
+
+test('2035 : un déficit apparaît en ligne 47 et en case 5QE de la 2042-C-PRO', () => {
+  let s = setRevenue(emptyState(), '2026-02-03', 100, 3);
+  s = addExpense(s, { date: '2026-03-01', amount: 400, category: 'Achats' }).state;
+  const rep = buildReport(s, resolvePeriod(2026, 'year'));
+  const f = sheet(rep, '2035');
+  assert.equal(valueOf(f, 35), 300);
+  assert.equal(valueOf(f, 46), 0);
+  assert.equal(valueOf(f, 47), 300);
+  const p = sheet(rep, '2042-C-PRO');
+  const row = (code) => p.rows.find((r) => r[0]?.v === code);
+  assert.equal(row('5QC')[2].v, 0);
+  assert.equal(row('5QE')[2].v, 300);
+});
+
+test('2042-C-PRO : 5QC reprend le bénéfice de la 2035 par formule', () => {
+  const rep = buildReport(formsFixture(), resolvePeriod(2026, 'year'));
+  const f = sheet(rep, '2035');
+  const p = sheet(rep, '2042-C-PRO');
+  const qc = p.rows.find((r) => r[0]?.v === '5QC')[2];
+  assert.equal(qc.v, 730);
+  const rowOf46 = f.rows.findIndex((r) => r[0]?.v === '46') + 1;
+  assert.equal(qc.f, `'2035'!C${rowOf46}`);
+  assert.deepEqual(rep.sheets.map((x) => x.name), ['Synthèse', 'CA', 'Frais', '2035', '2042-C-PRO']);
+});
+
+test('formulaires : classeur vide sans erreur, tous les montants à 0', () => {
+  const rep = buildReport(emptyState(), resolvePeriod(2026, 'year'));
+  const f = sheet(rep, '2035');
+  assert.equal(valueOf(f, 33), 0);
+  assert.equal(valueOf(f, 46), 0);
 });

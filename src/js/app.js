@@ -4,10 +4,11 @@ import {
   parseAmount, parseCount, pct, shiftMonth, shortDate, todayISO, toISO,
 } from './format.js';
 import {
-  ACCENTS, CATEGORIES_ADDED_V2, EVERY, ValidationError, addCategory, addExpense, expandExpenses, exportJSON, importJSON, isEmpty, load, removeCategory,
-  removeExpense, removeRevenue, sampleState, save, setRevenue, updateExpense, updateProfile, withCategories,
+  ACCENTS, EVERY, ValidationError, addExpense, expandExpenses, exportJSON, importJSON, isEmpty, load,
+  removeExpense, removeRevenue, sampleState, save, setRevenue, updateExpense, updateProfile,
 } from './store.js';
 import { categoryTotals, dailySeries, monthRange, monthlySeries, periodStats, recentEntries, yearOverview, yearRange } from './stats.js';
+import { CATEGORIES, categoryLabel } from './categories.js';
 import { downloadText, downscaleImage, formatSize, readText } from './img.js';
 import { MONTHS_FR, MONTHS_SHORT } from './format.js';
 import { buildReport, periodOptions, reportFileName, resolvePeriod } from './report.js';
@@ -30,19 +31,6 @@ function safeStorage() {
 }
 const storage = safeStorage();
 let state = load(storage);
-// Nouvelles catégories par défaut (Mutuelle, Véhicule, Fonctionnement) : ajoutées une seule fois aux listes existantes.
-try {
-  if (storage && !storage.getItem('crmedic.cats.v2')) {
-    storage.setItem('crmedic.cats.v2', '1');
-    const next = withCategories(state, CATEGORIES_ADDED_V2);
-    if (next !== state) {
-      state = next;
-      save(storage, state);
-      queueMicrotask(() => sync.pushSoon());
-    }
-  }
-} catch { /* stockage indisponible */ }
-
 const start = new Date();
 const ui = {
   y: start.getFullYear(), m: start.getMonth() + 1, sel: todayISO(start),
@@ -639,9 +627,12 @@ function refreshExpList() {
   if (el) el.innerHTML = expList();
 }
 
+/** Options de la liste des catégories (lignes de la 2035-A). */
+function catOptions(selected = '') {
+  return `<option value="" ${selected ? '' : 'selected'} disabled>Choisir une catégorie…</option>${CATEGORIES.map((c) => `<option value="${esc(c.name)}" ${c.name === selected ? 'selected' : ''}>${esc(categoryLabel(c.name))}</option>`).join('')}`;
+}
+
 function expPanel() {
-  const cats = state.categories;
-  if (!ui.cat || !cats.includes(ui.cat)) ui.cat = cats[0] ?? null;
   return `
     <div class="panel-title"><span class="dot cost"></span><h2>Ajouter un frais</h2></div>
     <form class="stack gap-18" id="form-exp" novalidate>
@@ -654,8 +645,8 @@ function expPanel() {
           <input class="input" id="exp-date" type="date" value="${today()}" required></div>
       </div>
       <div class="stack gap-8" id="exp-recur-zone">${recurBlock('exp')}</div>
-      <div class="stack gap-8"><div class="field-label" style="font-size:13px;font-weight:600;color:var(--muted)" id="cat-label">Catégorie</div>
-        <div class="pills" role="group" aria-labelledby="cat-label">${cats.length ? cats.map((c) => `<button type="button" class="pill" data-action="pick-cat" data-name="${esc(c)}" aria-pressed="${c === ui.cat}">${esc(c)}</button>`).join('') : '<p class="muted">Aucune catégorie : ajoutez-en dans <a href="#/profil/categories">Profil</a>.</p>'}</div></div>
+      <div class="field"><label for="exp-cat">Catégorie <span class="muted" style="font-weight:500">(ligne de la déclaration 2035)</span></label>
+        <select class="input" id="exp-cat">${catOptions(ui.cat)}</select></div>
       <div class="field"><label for="exp-note">Note (facultatif)</label><input class="input" id="exp-note" type="text" maxlength="200" placeholder="Fournisseur, objet…" autocomplete="off"></div>
       <p class="error" id="err-exp" role="alert"></p>
       <button type="submit" class="btn btn-cost btn-lg">${svg('check', 20, 2.4)}Enregistrer le frais</button>
@@ -692,7 +683,6 @@ function renderSheet() {
     return;
   }
   const keep = el.querySelector('.sheet-body')?.scrollTop ?? 0;
-  const cats = state.categories.includes(f.category) ? state.categories : [...state.categories, f.category];
   el.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ed-title">
       <div class="sheet-head"><h2 id="ed-title">${f.recur ? 'Frais récurrent' : 'Frais'}</h2>
@@ -706,7 +696,7 @@ function renderSheet() {
         </div>
         <div class="stack gap-8" id="ed-recur-zone">${recurBlock('ed')}</div>
         <div class="field"><label for="ed-cat">Catégorie</label>
-          <select class="input" id="ed-cat">${cats.map((c) => `<option value="${esc(c)}" ${c === f.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+          <select class="input" id="ed-cat">${catOptions(f.category)}</select></div>
         <div class="field"><label for="ed-note">Note</label><input class="input" id="ed-note" type="text" maxlength="200" value="${esc(f.note)}" autocomplete="off"></div>
         <div class="stack gap-8"><div class="field-label" style="font-size:13px;font-weight:600;color:var(--muted)">Justificatifs (photos)</div>
           <div class="stack gap-8" id="ed-proof">${proofBlock('ed')}</div></div>
@@ -786,7 +776,7 @@ function xlGrid(sheet) {
     }).join('');
     return `<tr><th scope="row">${ri + 1}</th>${tds}</tr>`;
   }).join('');
-  return `<div class="xl-scroll"><table class="xl"><colgroup><col class="xl-rn">${sheet.widths.map((w) => `<col style="width:${Math.round(w * 8.5)}px">`).join('')}</colgroup>
+  return `<div class="xl-scroll"><table class="xl" style="width:${40 + sheet.widths.reduce((t, w) => t + Math.round(w * 8.5), 0)}px"><colgroup><col class="xl-rn">${sheet.widths.map((w) => `<col style="width:${Math.round(w * 8.5)}px">`).join('')}</colgroup>
     <thead><tr><th></th>${sheet.widths.map((_, i) => `<th scope="col">${colLetter(i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -894,13 +884,8 @@ function appearanceInner() {
 }
 
 function categoriesInner() {
-  return `<div><h2 style="font-size:18px">Catégories de frais</h2><p class="muted" style="font-size:14px;margin-top:4px">Elles apparaissent dans la saisie d'un frais et dans le tableau de bord.</p></div>
-    <div class="row" style="gap:10px">${state.categories.map((c) => `<span class="chip">${esc(c)}<button type="button" data-action="remove-cat" data-name="${esc(c)}" aria-label="Supprimer ${esc(c)}">${svg('x', 16, 2.4)}</button></span>`).join('') || '<span class="muted">Aucune catégorie.</span>'}</div>
-    <div class="row" style="gap:10px;align-items:flex-end">
-      <div class="field" style="flex:1 1 240px"><label for="newcat">Nouvelle catégorie</label>
-        <input class="input" id="newcat" type="text" placeholder="Ex. Assurance RCP, Cotisations…" autocomplete="off" style="height:48px"></div>
-      <button type="button" class="btn btn-primary" data-action="add-cat" style="height:48px">${svg('plus', 18, 2.4)}Ajouter</button></div>
-    <p class="error" id="err-cat" role="alert"></p>`;
+  return `<div><h2 style="font-size:18px">Catégories de frais</h2><p class="muted" style="font-size:14px;margin-top:4px">Les catégories sont celles de la déclaration 2035 : chaque frais se reporte ainsi sur la bonne ligne, et l'export Excel remplit pour vous la 2035 et la 2042-C-PRO. La liste est fixe.</p></div>
+    <ul class="cat-list">${CATEGORIES.map((c) => `<li><span class="cat-line">${c.kind === 'retro' ? 'L. 3' : `L. ${c.line}`}</span><div><b>${esc(c.name)}</b><small>${esc(c.hint)}</small></div></li>`).join('')}</ul>`;
 }
 
 // ---------- Événements ----------
@@ -953,10 +938,6 @@ const actions = {
     toast('Saisie supprimée');
     renderCA();
   },
-  'pick-cat': (el) => {
-    ui.cat = el.dataset.name;
-    document.querySelectorAll('.panel-frais .pill').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.name === ui.cat)));
-  },
   'open-cam': (el) => { ui.target = el.dataset.scope || 'exp'; $('#in-cam').click(); },
   'open-file': (el) => { ui.target = el.dataset.scope || 'exp'; $('#in-file').click(); },
   detach: (el) => {
@@ -992,17 +973,6 @@ const actions = {
   },
   'open-photo': () => $('#in-photo').click(),
   'remove-photo': () => { commit(updateProfile(state, { photo: '' })); render(); },
-  'add-cat': () => {
-    try {
-      commit(addCategory(state, $('#newcat').value));
-      $('#sec-categories').innerHTML = categoriesInner();
-      $('#newcat').focus();
-    } catch (e) {
-      if (!(e instanceof ValidationError)) throw e;
-      fail('#err-cat', e.message);
-    }
-  },
-  'remove-cat': (el) => { commit(removeCategory(state, el.dataset.name)); $('#sec-categories').innerHTML = categoriesInner(); },
   'export-data': () => {
     downloadText(`crmedic-${today()}.json`, exportJSON(state));
     toast('Export téléchargé');
@@ -1182,7 +1152,7 @@ document.addEventListener('submit', (ev) => {
     const f = ui.form;
     try {
       const { state: next, expense } = addExpense(state, {
-        date: $('#exp-date').value, amount, category: ui.cat, note: $('#exp-note').value,
+        date: $('#exp-date').value, amount, category: $('#exp-cat').value, note: $('#exp-note').value,
         docs: f.docs, noDoc: f.noDoc, recur: f.recur ? { every: f.every, end: f.end } : null,
       });
       if (!commit(next) && expense.docs.some((d) => d.dataUrl)) {
@@ -1233,6 +1203,7 @@ document.addEventListener('input', (ev) => {
 });
 
 document.addEventListener('change', async (ev) => {
+  if (ev.target.id === 'exp-cat') ui.cat = ev.target.value;
   const input = ev.target;
   if (input.dataset?.exp) {
     ui.exp[input.dataset.exp] = input.dataset.exp === 'y' ? Number(input.value) : input.value;

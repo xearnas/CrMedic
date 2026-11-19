@@ -1,10 +1,8 @@
 // Modèle de données : fonctions pures (état immuable) + persistance localStorage.
 import { daysInMonth, isValidISO, toISO, todayISO } from './format.js';
+import { CATEGORY_NAMES, knownCategory, migrateCategory } from './categories.js';
 
 export const STORAGE_KEY = 'crmedic.v1';
-export const DEFAULT_CATEGORIES = ['Consommables', 'Loyer & charges', 'Déplacements', 'Logiciels', 'Formation', 'Mutuelle', 'Véhicule', 'Fonctionnement', 'Autre'];
-/** Catégories ajoutées aux listes déjà enregistrées (une seule fois, voir `withCategories`). */
-export const CATEGORIES_ADDED_V2 = ['Mutuelle', 'Véhicule', 'Fonctionnement'];
 export const ACCENTS = [
   { hex: '#0B6E8A', label: 'Bleu océan' },
   { hex: '#2E7D5B', label: 'Vert sapin' },
@@ -19,7 +17,7 @@ export function emptyState() {
   return {
     version: 1,
     profile: { name: 'Dr [Nom]', cabinet: 'Cabinet médical', email: '', rpps: '', accent: ACCENTS[0].hex, photo: '' },
-    categories: [...DEFAULT_CATEGORIES],
+    categories: [...CATEGORY_NAMES], // liste fermée (lignes de la 2035-A), conservée dans l'état pour la compatibilité des sauvegardes
     revenues: {}, // { 'YYYY-MM-DD': { amount, count } }
     // [{ id, date, amount, category, note, docs: [{ id, name, type, size, driveId?, dataUrl? }], noDoc, recur }]
     // recur : null, ou { every: 'week' | 'month' | 'year', end: 'YYYY-MM-DD' | '' } — `date` est alors la date de début.
@@ -60,10 +58,6 @@ export function normalize(raw) {
     accent: ACCENTS.some((a) => a.hex === p.accent) ? p.accent : base.profile.accent,
     photo: str(p.photo, ''),
   };
-  if (Array.isArray(raw.categories)) {
-    const cats = raw.categories.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim());
-    base.categories = [...new Set(cats)];
-  }
   if (raw.revenues && typeof raw.revenues === 'object') {
     for (const [iso, r] of Object.entries(raw.revenues)) {
       if (isValidISO(iso) && r && isNum(r.amount) && r.amount >= 0) {
@@ -78,8 +72,8 @@ export function normalize(raw) {
         id: typeof e.id === 'string' && e.id ? e.id : newId(),
         date: e.date,
         amount: e.amount,
-        category: e.category,
-        note: typeof e.note === 'string' ? e.note : '',
+        // anciennes catégories libres -> lignes de la 2035 (sans rien perdre : l'ancien nom inconnu passe dans la note)
+        ...migrateCategory(e.category, typeof e.note === 'string' ? e.note : ''),
         ...normalizeProof(e),
         recur: normalizeRecur(e.recur, e.date),
       }));
@@ -117,6 +111,7 @@ function checkExpense({ date, amount, category, recur }) {
   if (!isValidISO(date)) throw new ValidationError('Date du frais invalide.');
   if (!isNum(amount) || amount <= 0) throw new ValidationError('Saisissez un montant TTC supérieur à 0.');
   if (typeof category !== 'string' || !category.trim()) throw new ValidationError('Choisissez une catégorie.');
+  if (!knownCategory(category)) throw new ValidationError('Choisissez une catégorie de la liste.');
   if (recur) {
     if (!(recur.every in EVERY)) throw new ValidationError('Choisissez la fréquence du frais récurrent.');
     if (recur.end && !isValidISO(recur.end)) throw new ValidationError('Date de fin invalide.');
@@ -125,7 +120,7 @@ function checkExpense({ date, amount, category, recur }) {
 }
 
 const buildExpense = (id, { date, amount, category, note = '', docs = [], noDoc = false, recur = null }) => ({
-  id, date, amount, category: category.trim(), note: String(note).trim().slice(0, 200),
+  id, date, amount, category: knownCategory(category), note: String(note).trim().slice(0, 200),
   ...normalizeProof({ docs, noDoc }),
   recur: recur ? { every: recur.every, end: recur.end || '' } : null,
 });
@@ -207,29 +202,6 @@ export function expandExpenses(state, upTo = todayISO()) {
 
 export function removeExpense(state, id) {
   return { ...state, expenses: state.expenses.filter((e) => e.id !== id) };
-}
-
-export function addCategory(state, name) {
-  const v = String(name ?? '').trim();
-  if (!v) throw new ValidationError('Saisissez un nom de catégorie.');
-  if (state.categories.some((c) => c.toLowerCase() === v.toLowerCase())) throw new ValidationError('Cette catégorie existe déjà.');
-  return { ...state, categories: [...state.categories, v] };
-}
-
-/** Les frais déjà saisis conservent leur catégorie (affichée telle quelle). */
-/** Ajoute les catégories manquantes (sans tenir compte de la casse), avant « Autre » s'il existe. */
-export function withCategories(state, names) {
-  const have = new Set(state.categories.map((c) => c.toLowerCase()));
-  const add = names.filter((n) => !have.has(n.toLowerCase()));
-  if (!add.length) return state;
-  const i = state.categories.findIndex((c) => c === 'Autre');
-  const cats = [...state.categories];
-  cats.splice(i === -1 ? cats.length : i, 0, ...add);
-  return { ...state, categories: cats };
-}
-
-export function removeCategory(state, name) {
-  return { ...state, categories: state.categories.filter((c) => c !== name) };
 }
 
 export function updateProfile(state, patch) {

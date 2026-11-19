@@ -72,6 +72,14 @@ export async function writeXlsx(ExcelJS, report, { accent = '#0B6E8A', creator =
           x.font = { bold: true, color: { argb: 'FFFFFFFF' } };
           x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
           x.alignment = { horizontal: ci === 0 ? 'left' : 'center', vertical: 'middle' };
+        } else if (cell.kind === 'dont') {
+          x.font = { color: { argb: 'FF56635F' } };
+          x.alignment = { ...x.alignment, indent: ci === 1 ? 2 : 0 };
+        } else if (cell.kind === 'section') {
+          x.font = { bold: true, color: { argb } };
+          x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4EDEA' } };
+        } else if (cell.kind === 'input') {
+          x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF4C2' } };
         } else if (cell.kind === 'total') {
           x.font = { bold: true };
           x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEECE4' } };

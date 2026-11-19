@@ -4,7 +4,7 @@ import { createPhotos } from '../src/js/photos.js';
 import { addExpense, emptyState, pendingDocs } from '../src/js/store.js';
 
 function setup({ docs, online = true } = {}) {
-  const env = { state: addExpense(emptyState(), { date: '2026-10-02', amount: 10, category: 'Autre', docs }).state, uploads: [], deleted: [], online, changes: 0 };
+  const env = { state: addExpense(emptyState(), { date: '2026-10-02', amount: 10, category: 'Autres frais divers de gestion', docs }).state, uploads: [], deleted: [], online, changes: 0 };
   const drive = {
     uploadImage: async ({ name }) => {
       if (!env.online) throw new Error('offline');

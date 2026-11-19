@@ -2,6 +2,7 @@
 // Le classeur sert de base de données : une ligne par opération, colonnes fixes, valeurs « brutes »
 // (dates ISO en texte, montants en nombres). La mise en forme pour le comptable est faite par l'export.
 import { ACCENTS, normalize, newId } from './store.js';
+import { CATEGORIES } from './categories.js';
 import { isValidISO, parseAmount } from './format.js';
 
 /** Nom du fichier dans le Drive de l'utilisateur. Ne pas le renommer : l'application le retrouve par ce nom. */
@@ -20,14 +21,14 @@ export const TABS = {
 export const HEADERS = {
   [TABS.ca]: ['Date', 'Montant (€)', 'Consultations'],
   [TABS.frais]: ['ID', 'Date', 'Montant TTC (€)', 'Catégorie', 'Note', 'Justificatif', 'Sans justificatif', 'Récurrence', 'Fin de récurrence'],
-  [TABS.categories]: ['Catégorie'],
+  [TABS.categories]: ['Catégorie', 'Ligne 2035'],
   [TABS.profil]: ['Clé', 'Valeur'],
   [TABS.docs]: ['ID frais', 'ID fichier Drive', 'Nom', 'Type'],
   [TABS.meta]: ['Clé', 'Valeur'],
 };
 
 /** Colonnes obligatoires de l'en-tête : les classeurs créés avant les colonnes ajoutées restent lisibles. */
-const REQUIRED_COLS = { [TABS.frais]: 6 };
+const REQUIRED_COLS = { [TABS.frais]: 6, [TABS.categories]: 1 };
 const RECUR_TO_SHEET = { week: 'semaine', month: 'mois', year: 'an' };
 const RECUR_FROM_SHEET = { semaine: 'week', mois: 'month', an: 'year' };
 
@@ -52,7 +53,7 @@ export function stateToTables(state, now = new Date()) {
     [TABS.ca]: [HEADERS[TABS.ca], ...ca],
     [TABS.frais]: [HEADERS[TABS.frais], ...frais],
     [TABS.docs]: [HEADERS[TABS.docs], ...justificatifs],
-    [TABS.categories]: [HEADERS[TABS.categories], ...state.categories.map((c) => [c])],
+    [TABS.categories]: [HEADERS[TABS.categories], ...CATEGORIES.map((c) => [c.name, c.line])],
     [TABS.profil]: [HEADERS[TABS.profil], ...PROFILE_KEYS.map((k) => [k, state.profile[k] ?? ''])],
     [TABS.meta]: [HEADERS[TABS.meta], ['schema', SCHEMA_VERSION], ['application', 'CrMedic'], ['maj', now.toISOString()]],
   };
@@ -100,7 +101,7 @@ function isoOf(v) {
 export function tablesToState(tables, base = null) {
   const caRows = checkHeader(tables, TABS.ca);
   const fraisRows = checkHeader(tables, TABS.frais);
-  const catRows = checkHeader(tables, TABS.categories);
+  checkHeader(tables, TABS.categories); // onglet purement informatif : les catégories sont fixes
   const profRows = checkHeader(tables, TABS.profil);
   const docRows = checkHeader(tables, TABS.docs);
   let ignored = 0;
@@ -163,9 +164,7 @@ export function tablesToState(tables, base = null) {
   }
 
   const raw = { profile, revenues, expenses };
-  if (catRows.length) raw.categories = catRows.map((r) => String(cell(r[0])));
   const state = normalize(raw);
-  if (!catRows.length && base?.categories) state.categories = [...base.categories];
   return { state, ignored };
 }
 

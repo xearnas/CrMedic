@@ -286,6 +286,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .xl td.note { font-style: italic; }
 .xl td.head { background: var(--accent); color: #fff; font-weight: 700; text-align: center; }
 .xl td.head:first-of-type { text-align: left; }
+.xl td.section { background: #E4EDEA; color: var(--accent); font-weight: 700; }
+.xl td.dont { color: var(--muted); }
+.xl td.dont:nth-child(3) { padding-left: 22px; }
+.xl td.input { background: #FFF4C2; }
 .xl td.total { background: #EEECE4; font-weight: 700; border-top: 2px solid var(--ink); }
 .xl-tabs { display: flex; gap: 2px; padding: 6px 8px 0; background: #F0F2F1; border-top: 1px solid #D5DBD7; overflow-x: auto; }
 .xl-tab { border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: transparent; padding: 8px 18px; font-size: 14px; font-weight: 600; color: var(--ink-soft); min-height: 40px; }
@@ -425,7 +429,7 @@ body.fit .saisie .panel-title { flex: none; }
 body.fit .saisie .cal-wrap { flex: 1 1 0; min-height: auto; gap: 6px; }
 body.fit .saisie .cal-head, body.fit .saisie .cal-legend { flex: none; }
 body.fit .saisie .cal-nav { width: 34px; height: 34px; }
-body.fit .saisie .cal-grid { flex: 1 1 0; min-height: 0; grid-template-rows: auto; grid-auto-rows: minmax(34px, 1fr); gap: 4px; }
+body.fit .saisie .cal-grid { flex: 1 1 0; min-height: auto; grid-template-rows: auto; grid-auto-rows: minmax(34px, 1fr); gap: 4px; }
 body.fit .saisie .cal-grid > div:not(.cal-dow) { min-height: 0; display: flex; }
 body.fit .saisie .day { min-height: 0; height: 100%; padding: 2px 4px; justify-content: center; gap: 0; }
 body.fit .saisie .day .d, body.fit .saisie .day .v { font-size: 12px; line-height: 1.25; }
@@ -661,3 +665,10 @@ body.fit .saisie .error:empty { display: none; }
   body.fit .export .exp-ctl { padding: 10px 12px; }
   body.fit .export .xl-bar { display: none; }
 }
+
+/* Liste (lecture seule) des catégories de frais = lignes de la 2035 */
+.cat-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.cat-list li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.cat-line { flex: none; min-width: 42px; text-align: center; font-size: 12px; font-weight: 700; color: var(--cost); background: #FBE9DD; border-radius: 8px; padding: 3px 6px; }
+.cat-list b { display: block; font-size: 14px; }
+.cat-list small { display: block; font-size: 12px; color: var(--muted); }
